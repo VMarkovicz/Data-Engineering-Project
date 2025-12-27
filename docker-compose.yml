@@ -1,0 +1,20 @@
+version: "3.9"
+
+services:
+  db:
+    image: pgvector/pgvector:pg17 # Postgres 17 with pgvector pre-installed
+    container_name: rag-postgres
+    environment:
+      POSTGRES_USER: rag_user
+      POSTGRES_PASSWORD: rag_password
+      POSTGRES_DB: rag_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Optional: run init SQL on first start (e.g. enable extensions, create schemas)
+      # - ./initdb:/docker-entrypoint-initdb.d
+    restart: unless-stopped
+
+volumes:
+  pgdata:
