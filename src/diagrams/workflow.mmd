@@ -46,10 +46,17 @@ erDiagram
 		TEXT description  ""  
 	}
 
+	dim_country {
+		INTEGER country_key PK ""  
+		VARCHAR country_name  ""  
+		VARCHAR country_code  ""  
+	}
+
 	dim_state {
 		INTEGER state_key PK ""  
 		VARCHAR state_name  ""  
 		VARCHAR state_code  ""  
+		INTEGER country_key FK ""  
 	}
 
 	dim_metro {
@@ -132,6 +139,8 @@ erDiagram
 	dim_county||--o{dim_city:"contains"
 	dim_city||--o{dim_zip:"contains"
 	dim_city||--o{dim_neighborhood:"contains"
+	dim_country||--o{dim_state:"references"
+	dim_country||--o{dim_region:"references"
 	dim_state||--o{dim_region:"references"
 	dim_metro||--o{dim_region:"references"
 	dim_county||--o{dim_region:"references"
