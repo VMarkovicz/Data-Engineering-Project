@@ -7,42 +7,32 @@ import os
 # ----- CONFIG -----
 
 EMBEDDING_MODEL = "text-embedding-3-small"
+CHAT_MODEL = "gpt-4o-mini-2024-07-18"
 
 DB_SETTINGS = {
     "dbname": "rag_db",
     "user": "rag_user",
     "password": "rag_password",
-    "host": "localhost",  # use "db" if running from another container
+    "host": "localhost", 
     "port": 5432,
 }
 
 load_dotenv()
 
-client = OpenAI(
-       api_key=os.getenv("OPEN_AI_KEY")
-)  # needs OPENAI_API_KEY
+client = OpenAI(api_key=os.getenv("OPEN_AI_KEY"))
 
 
 # ----- DB UTILS -----
 
 def init_db():
-    """
-    1) Connect without registering vector
-    2) CREATE EXTENSION vector
-    3) Register vector type on this connection
-    4) Create schema + table (no IVFFlat index for now)
-    """
     conn = psycopg2.connect(**DB_SETTINGS)
     try:
         with conn.cursor() as cur:
-            # 1) Ensure extension exists so type "vector" is available
             cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
             conn.commit()
 
-            # 2) Register type on this connection
             register_vector(conn)
 
-            # 3) Create schema + table
             cur.execute("""
                 CREATE SCHEMA IF NOT EXISTS rag;
 
@@ -65,10 +55,6 @@ def init_db():
 
 
 def get_connection():
-    """
-    For normal use: connect and register the vector type.
-    init_db() must have been called once beforehand.
-    """
     conn = psycopg2.connect(**DB_SETTINGS)
     register_vector(conn)
     return conn
@@ -77,14 +63,11 @@ def get_connection():
 # ----- EMBEDDINGS -----
 
 def get_embedding(text: str) -> list[float]:
-    """
-    Get embedding from OpenAI for a given text.
-    """
     res = client.embeddings.create(
         model=EMBEDDING_MODEL,
         input=text,
     )
-    return res.data[0].embedding  # list[float], dim 1536 [web:116][web:119]
+    return res.data[0].embedding
 
 
 # ----- INSERT DOC -----
@@ -137,16 +120,11 @@ def insert_chunk(
 # ----- SEARCH -----
 
 def search_similar_chunks(query_text: str, top_k: int = 5):
-    """
-    Exact similarity search using cosine distance (<=>).
-    No IVFFlat index to avoid small-dataset issues.
-    """
     query_embedding = get_embedding(query_text)
 
     conn = get_connection()
     try:
         with conn.cursor() as cur:
-            # Force exact scan (we only have a few rows)
             cur.execute("SET enable_indexscan = off;")
             cur.execute("SET enable_bitmapscan = off;")
 
@@ -169,6 +147,48 @@ def search_similar_chunks(query_text: str, top_k: int = 5):
         conn.close()
 
     return rows
+
+
+# ----- LLM ANSWER -----
+
+def answer_question_with_llm(query: str, retrieved_rows):
+    """
+    retrieved_rows: list of tuples (id, text, year_key, region_key, similarity)
+    Uses GPT-4o mini to answer using these rows as context.
+    """
+    # Build a context string
+    context_parts = []
+    for i, (id_, text, year_key, region_key, similarity) in enumerate(retrieved_rows, start=1):
+        context_parts.append(
+            f"Document {i} (id={id_}, year={year_key}, region={region_key}, sim={similarity:.3f}): {text}"
+        )
+    context = "\n".join(context_parts)
+
+    system_prompt = (
+        "You are a data assistant that answers questions using the provided documents only. "
+        "If the answer is not clearly supported by the documents, say you are not sure. "
+        "Be concise and factual."
+        "Before answering, analyse the question carefully and check if the documents contain relevant information."
+        "The ones that are more relevant are listed first."
+        "If they do not contain relevant information, discard them in your answer and just use the ones that are relevant."
+    )
+
+    user_prompt = (
+        f"Question: {query}\n\n"
+        f"Documents:\n{context}\n\n"
+        "Answer the question using only these documents."
+    )
+
+    response = client.chat.completions.create(
+        model=CHAT_MODEL,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=0.1,
+    )
+
+    return response.choices[0].message.content.strip()
 
 
 # ----- SAMPLE DATA -----
@@ -222,7 +242,6 @@ sample_chunks = [
 def main():
     init_db()
 
-    # Seed data if empty
     conn = get_connection()
     try:
         with conn.cursor() as cur:
@@ -233,7 +252,6 @@ def main():
 
     if count == 0:
         print("Seeding example chunks...")
-        # main example
         example_text = (
             "In 2020, the median house price in region X was 250,000 EUR, "
             "showing strong growth compared to previous years."
@@ -247,7 +265,6 @@ def main():
             asset_key="real_estate",
         )
 
-        # additional sample chunks
         for chunk in sample_chunks:
             insert_chunk(
                 chunk["text"],
@@ -271,10 +288,14 @@ def main():
             print("No results.")
             continue
 
-        print(f"\nTop {len(results)} results:\n")
+        print(f"\nTop {len(results)} retrieved chunks:\n")
         for i, (id_, text, year_key, region_key, similarity) in enumerate(results, start=1):
             print(f"[{i}] id={id_}, sim={similarity:.3f}, year={year_key}, region={region_key}")
             print(f"    {text}\n")
+
+        answer = answer_question_with_llm(query, results)
+        print("LLM answer:")
+        print(answer)
 
 
 if __name__ == "__main__":
