@@ -1,8 +1,6 @@
-version: "3.9"
-
 services:
   db:
-    image: pgvector/pgvector:pg17 # Postgres 17 with pgvector pre-installed
+    image: pgvector/pgvector:pg17
     container_name: rag-postgres
     environment:
       POSTGRES_USER: rag_user
@@ -12,9 +10,56 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      # Optional: run init SQL on first start (e.g. enable extensions, create schemas)
-      # - ./initdb:/docker-entrypoint-initdb.d
     restart: unless-stopped
+
+  spark-master:
+    build:
+      context: .
+      dockerfile: Dockerfile.spark-delta
+    container_name: spark-master
+    hostname: spark-master
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master"]
+    environment:
+      - SPARK_MASTER_HOST=spark-master
+      - SPARK_MASTER_PORT=7077
+      - SPARK_MASTER_WEBUI_PORT=8080
+    ports:
+      - "7077:7077"
+      - "8080:8080"
+    volumes:
+      - ./src:/opt/src
+      - ./datalake:/datalake  # Add datalake mount
+
+  spark-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.spark-delta
+    depends_on:
+      - spark-master
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077"]
+    environment:
+      - SPARK_WORKER_CORES=4
+      - SPARK_WORKER_MEMORY=4G
+    volumes:
+      - ./src:/opt/src
+      - ./datalake:/datalake  # Add datalake mount
+    deploy:
+      replicas: 2  # Run 2 workers
+
+  spark-run:
+    build:
+      context: .
+      dockerfile: Dockerfile.spark-delta
+    container_name: spark-run
+    depends_on:
+      - spark-master
+      - spark-worker
+    volumes:
+      - ./src:/opt/src
+      - ./datalake:/datalake  # Add datalake mount
+    ports:
+      - "4040:4040"
+    entrypoint: ["/bin/bash", "-c", "tail -f /dev/null"]
 
 volumes:
   pgdata:
