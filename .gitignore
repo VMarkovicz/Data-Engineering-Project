@@ -1,3 +1,4 @@
 *.env
 datalake
 **/validation/*
+src/raw_datasets/ZILLOW*
