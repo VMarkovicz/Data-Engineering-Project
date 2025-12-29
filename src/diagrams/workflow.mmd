@@ -46,19 +46,6 @@ erDiagram
 		TEXT description  ""  
 	}
 
-	dim_country {
-		INTEGER country_key PK ""  
-		VARCHAR country_name  ""  
-		VARCHAR country_code  ""  
-	}
-
-	dim_state {
-		INTEGER state_key PK ""  
-		VARCHAR state_name  ""  
-		VARCHAR state_code  ""  
-		INTEGER country_key FK ""  
-	}
-
 	dim_metro {
 		INTEGER metro_key PK ""  
 		VARCHAR metro_name  ""  
@@ -90,18 +77,6 @@ erDiagram
 		INTEGER city_key FK ""  
 	}
 
-	dim_region {
-		INTEGER region_key PK ""  
-		VARCHAR region_id UK ""  
-		VARCHAR region_type  ""  
-		INTEGER zip_key FK ""  
-		INTEGER neighborhood_key FK ""  
-		INTEGER city_key FK ""  
-		INTEGER county_key FK ""  
-		INTEGER metro_key FK ""  
-		INTEGER state_key FK ""  
-	}
-
 	dim_realstate_indicator {
 		VARCHAR realstate_indicator_key PK ""  
 		INTEGER region_key FK ""  
@@ -122,6 +97,31 @@ erDiagram
 		INTEGER value_key PK ""  
 		DECIMAL value  ""  
 		ENUM unit  ""  
+	}
+
+	dim_country {
+		VARCHAR country_key PK ""  
+		VARCHAR country_name  ""  
+	}
+
+	dim_state {
+		INTEGER state_key PK ""  
+		VARCHAR state_name  ""  
+		VARCHAR state_code  ""  
+		VARCHAR country_key FK ""  
+	}
+
+	dim_region {
+		INTEGER region_key PK ""  
+		VARCHAR region_id UK ""  
+		VARCHAR region_type  ""  
+		INTEGER zip_key FK ""  
+		INTEGER neighborhood_key FK ""  
+		INTEGER city_key FK ""  
+		INTEGER county_key FK ""  
+		INTEGER metro_key FK ""  
+		INTEGER state_key FK ""  
+		VARCHAR country_key FK ""  
 	}
 
 	dim_year||--o{fact_value:"year_key"
@@ -147,4 +147,3 @@ erDiagram
 	dim_zip||--o{dim_region:"references"
 	dim_neighborhood||--o{dim_region:"references"
 	dim_region||--o{dim_realstate_indicator:"references"
-
