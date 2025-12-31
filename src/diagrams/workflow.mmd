@@ -1,18 +1,5 @@
 erDiagram
 	direction TB
-	dim_year {
-		INTEGER year_key PK ""  
-	}
-
-	dim_time {
-		DATE date_key PK ""  
-		VARCHAR day_name  ""  
-		INTEGER week_number  ""  
-		INTEGER month_number  ""  
-		VARCHAR month_name  ""  
-		INTEGER year_key FK ""  
-	}
-
 	dim_cryptostock_value {
 		INTEGER cryptostock_value_key PK ""  
 		INTEGER stock_price_key FK ""  
@@ -44,6 +31,20 @@ erDiagram
 		VARCHAR socioeconomical_indicator_key PK ""  
 		VARCHAR name  ""  
 		TEXT description  ""  
+		INTEGER country_key PK ""  
+	}
+
+	dim_country {
+		INTEGER country_key PK ""  
+		VARCHAR country_name  ""  
+		VARCHAR country_code  ""  
+	}
+
+	dim_state {
+		INTEGER state_key PK ""  
+		VARCHAR state_name  ""  
+		VARCHAR state_code  ""  
+		INTEGER country_key FK ""  
 	}
 
 	dim_metro {
@@ -99,21 +100,9 @@ erDiagram
 		ENUM unit  ""  
 	}
 
-	dim_country {
-		VARCHAR country_key PK ""  
-		VARCHAR country_name  ""  
-	}
-
-	dim_state {
-		INTEGER state_key PK ""  
-		VARCHAR state_name  ""  
-		VARCHAR state_code  ""  
-		VARCHAR country_key FK ""  
-	}
-
 	dim_region {
 		INTEGER region_key PK ""  
-		VARCHAR region_id UK ""  
+		VARCHAR region_name  ""  
 		VARCHAR region_type  ""  
 		INTEGER zip_key FK ""  
 		INTEGER neighborhood_key FK ""  
@@ -121,7 +110,20 @@ erDiagram
 		INTEGER county_key FK ""  
 		INTEGER metro_key FK ""  
 		INTEGER state_key FK ""  
-		VARCHAR country_key FK ""  
+		INTEGER country_key FK ""  
+	}
+
+	dim_year {
+		INTEGER year_key PK ""  
+		DATE date_key FK ""  
+	}
+
+	dim_time {
+		DATE date_key PK ""  
+		VARCHAR day_name  ""  
+		INTEGER week_number  ""  
+		INTEGER month_number  ""  
+		VARCHAR month_name  ""  
 	}
 
 	dim_year||--o{fact_value:"year_key"
@@ -147,3 +149,4 @@ erDiagram
 	dim_zip||--o{dim_region:"references"
 	dim_neighborhood||--o{dim_region:"references"
 	dim_region||--o{dim_realstate_indicator:"references"
+	dim_country||--o{dim_socioeconomical_indicator:"references"
