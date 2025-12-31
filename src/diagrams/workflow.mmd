@@ -31,7 +31,6 @@ erDiagram
 		VARCHAR socioeconomical_indicator_key PK ""  
 		VARCHAR name  ""  
 		TEXT description  ""  
-		INTEGER country_key PK ""  
 	}
 
 	dim_country {
@@ -81,17 +80,8 @@ erDiagram
 	dim_realstate_indicator {
 		VARCHAR realstate_indicator_key PK ""  
 		INTEGER region_key FK ""  
-		VARCHAR realstate_indicator_name  ""  
-		TEXT realstate_indicator_description  ""  
-	}
-
-	fact_value {
-		INTEGER value_key FK ""  
-		VARCHAR asset_key FK ""  
-		INTEGER year_key FK ""  
-		VARCHAR socioeconomical_indicator_key FK ""  
-		VARCHAR realstate_indicator_key FK ""  
-		varchar cryptostock_value_key FK ""  
+		VARCHAR indicator_name  ""  
+		TEXT indicator_description  ""  
 	}
 
 	dim_value {
@@ -102,7 +92,6 @@ erDiagram
 
 	dim_region {
 		INTEGER region_key PK ""  
-		VARCHAR region_name  ""  
 		VARCHAR region_type  ""  
 		INTEGER zip_key FK ""  
 		INTEGER neighborhood_key FK ""  
@@ -113,21 +102,26 @@ erDiagram
 		INTEGER country_key FK ""  
 	}
 
-	dim_year {
-		INTEGER year_key PK ""  
-		DATE date_key FK ""  
-	}
-
 	dim_time {
 		DATE date_key PK ""  
 		VARCHAR day_name  ""  
 		INTEGER week_number  ""  
 		INTEGER month_number  ""  
 		VARCHAR month_name  ""  
+		INTEGER year  ""  
 	}
 
-	dim_year||--o{fact_value:"year_key"
-	dim_time||--o{dim_year:"date_key"
+	fact_value {
+		INTEGER value_key FK ""  
+		VARCHAR asset_key FK ""  
+		VARCHAR socioeconomical_indicator_key FK ""  
+		VARCHAR realstate_indicator_key FK ""  
+		varchar cryptostock_value_key FK ""  
+		INTEGER country_key PK ""  
+		DATE date_key FK ""  
+	}
+
+	dim_time||--o{fact_value:"year_key"
 	dim_asset||--o{fact_value:"asset_key"
 	dim_value||--o{fact_value:"value_key"
 	dim_realstate_indicator||--o{fact_value:"references"
@@ -149,4 +143,3 @@ erDiagram
 	dim_zip||--o{dim_region:"references"
 	dim_neighborhood||--o{dim_region:"references"
 	dim_region||--o{dim_realstate_indicator:"references"
-	dim_country||--o{dim_socioeconomical_indicator:"references"
