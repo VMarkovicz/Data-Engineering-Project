@@ -6,3 +6,4 @@ test.ipynb
 airflow
 src/raw_datasets/cryptostocks/*
 **/__pycache__
+.venv
