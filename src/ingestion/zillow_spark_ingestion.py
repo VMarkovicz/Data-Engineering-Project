@@ -14,127 +14,127 @@ spark = SparkSession.builder \
 
 raw_data_path = "/opt/src/raw_datasets"  # Use Docker mounted path instead of Windows path
 
-# print("Starting Bronze Layer: Raw Data Ingestion...")
+print("Starting Bronze Layer: Raw Data Ingestion...")
 
-# # Read raw CSV files exactly as they are - USE FORWARD SLASHES
-# bronze_zillow_data = spark.read.csv(f"{raw_data_path}/ZILLOW_DATA_962c837a6ccefddddf190101e0bafdaf/ZILLOW_DATA_962c837a6ccefddddf190101e0bafdaf.csv", header=True, inferSchema=True) \
-#     .withColumn("ingestion_timestamp", current_timestamp()) \
-#     .withColumn("source_file", lit("ZILLOW_DATA.csv"))
+# Read raw CSV files exactly as they are - USE FORWARD SLASHES
+bronze_zillow_data = spark.read.csv(f"{raw_data_path}/ZILLOW_DATA_962c837a6ccefddddf190101e0bafdaf/ZILLOW_DATA_962c837a6ccefddddf190101e0bafdaf.csv", header=True, inferSchema=True) \
+    .withColumn("ingestion_timestamp", current_timestamp()) \
+    .withColumn("source_file", lit("ZILLOW_DATA.csv"))
 
-# bronze_zillow_indicators = spark.read.csv(f"{raw_data_path}/ZILLOW_INDICATORS_e93833a53d6c88463446a364cda611cc/ZILLOW_INDICATORS_e93833a53d6c88463446a364cda611cc.csv", header=True, inferSchema=True) \
-#     .withColumn("ingestion_timestamp", current_timestamp()) \
-#     .withColumn("source_file", lit("ZILLOW_INDICATORS.csv"))
+bronze_zillow_indicators = spark.read.csv(f"{raw_data_path}/ZILLOW_INDICATORS_e93833a53d6c88463446a364cda611cc/ZILLOW_INDICATORS_e93833a53d6c88463446a364cda611cc.csv", header=True, inferSchema=True) \
+    .withColumn("ingestion_timestamp", current_timestamp()) \
+    .withColumn("source_file", lit("ZILLOW_INDICATORS.csv"))
 
-# bronze_zillow_regions = spark.read.csv(f"{raw_data_path}/ZILLOW_REGIONS_1a51d107db038a83ac171d604cb48d5b/ZILLOW_REGIONS_1a51d107db038a83ac171d604cb48d5b.csv", header=True, inferSchema=True) \
-#     .withColumn("ingestion_timestamp", current_timestamp()) \
-#     .withColumn("source_file", lit("ZILLOW_REGIONS.csv"))
+bronze_zillow_regions = spark.read.csv(f"{raw_data_path}/ZILLOW_REGIONS_1a51d107db038a83ac171d604cb48d5b/ZILLOW_REGIONS_1a51d107db038a83ac171d604cb48d5b.csv", header=True, inferSchema=True) \
+    .withColumn("ingestion_timestamp", current_timestamp()) \
+    .withColumn("source_file", lit("ZILLOW_REGIONS.csv"))
 
-# # Write to Bronze layer (preserve raw data as Delta tables)
-# bronze_zillow_data.write \
-#     .format("delta") \
-#     .mode("overwrite") \
-#     .option("overwriteSchema", "true") \
-#     .save("/datalake/bronze/zillow_data")
+# Write to Bronze layer (preserve raw data as Delta tables)
+bronze_zillow_data.write \
+    .format("delta") \
+    .mode("overwrite") \
+    .option("overwriteSchema", "true") \
+    .save("/datalake/bronze/zillow_data")
 
-# bronze_zillow_indicators.write \
-#     .format("delta") \
-#     .mode("overwrite") \
-#     .option("overwriteSchema", "true") \
-#     .save("/datalake/bronze/zillow_indicators")
+bronze_zillow_indicators.write \
+    .format("delta") \
+    .mode("overwrite") \
+    .option("overwriteSchema", "true") \
+    .save("/datalake/bronze/zillow_indicators")
 
-# bronze_zillow_regions.write \
-#     .format("delta") \
-#     .mode("overwrite") \
-#     .option("overwriteSchema", "true") \
-#     .save("/datalake/bronze/zillow_regions")
+bronze_zillow_regions.write \
+    .format("delta") \
+    .mode("overwrite") \
+    .option("overwriteSchema", "true") \
+    .save("/datalake/bronze/zillow_regions")
 
-# print("Bronze Layer completed: Raw data stored successfully")
-
-
-# print("Starting Silver Layer: Data Cleaning and Transformation...")
-
-# # Read from Bronze layer
-# bronze_zillow_data = spark.read.format("delta").load("/datalake/bronze/zillow_data")
-# bronze_zillow_indicators = spark.read.format("delta").load("/datalake/bronze/zillow_indicators")
-# bronze_zillow_regions = spark.read.format("delta").load("/datalake/bronze/zillow_regions")
+print("Bronze Layer completed: Raw data stored successfully")
 
 
+print("Starting Silver Layer: Data Cleaning and Transformation...")
 
-# # Data Quality Checks & Cleaning
-# silver_zillow_data = bronze_zillow_data \
-#     .dropDuplicates(["indicator_id"]) \
-#     .filter(col("region_id").isNotNull()) \
-#     .filter(col("date").isNotNull()) \
-#     .filter(col("value").isNotNull()) \
-#     .withColumn("value", col("value").cast("decimal(30,10)")) \
-#     .withColumn("processed_timestamp", current_timestamp())
-
-# silver_zillow_indicators = bronze_zillow_indicators \
-#     .dropDuplicates(["indicator_id"]) \
-#     .filter(col("indicator").isNotNull())
-
-# silver_zillow_indicators_clean = silver_zillow_indicators.drop(
-#     "ingestion_timestamp", 
-#     "source_file",
-#     "processed_timestamp",
-#     'category'
-# )
+# Read from Bronze layer
+bronze_zillow_data = spark.read.format("delta").load("/datalake/bronze/zillow_data")
+bronze_zillow_indicators = spark.read.format("delta").load("/datalake/bronze/zillow_indicators")
+bronze_zillow_regions = spark.read.format("delta").load("/datalake/bronze/zillow_regions")
 
 
 
-# silver_zillow_regions = bronze_zillow_regions \
-#     .dropDuplicates(["region_id"]) \
-#     .filter(col("region").isNotNull()) \
-#     .filter(col("region_type").isNotNull())
+# Data Quality Checks & Cleaning
+silver_zillow_data = bronze_zillow_data \
+    .dropDuplicates(["indicator_id"]) \
+    .filter(col("region_id").isNotNull()) \
+    .filter(col("date").isNotNull()) \
+    .filter(col("value").isNotNull()) \
+    .withColumn("value", col("value").cast("decimal(30,10)")) \
+    .withColumn("processed_timestamp", current_timestamp())
 
-# silver_zillow_regions_clean = silver_zillow_regions.drop(
-#     "ingestion_timestamp",
-#     "source_file",
-#     "processed_timestamp"
-# )
+silver_zillow_indicators = bronze_zillow_indicators \
+    .dropDuplicates(["indicator_id"]) \
+    .filter(col("indicator").isNotNull())
 
-
-# # Enrich data by joining metadata with data
-# silver_enriched_data = silver_zillow_data.join(
-#     silver_zillow_indicators_clean,
-#     on="indicator_id",
-#     how="left"
-# ).select(
-#     col("indicator_id"),
-#     col("region_id"),
-#     col("date"),
-#     col("value"),
-#     col("indicator"),
-#     col("ingestion_timestamp"),
-#     col("processed_timestamp")
-# ).dropDuplicates(["indicator_id", "region_id", "date"])
-
-# silver_enriched_data = silver_enriched_data.join(
-#     silver_zillow_regions_clean,
-#     on="region_id",
-#     how="left"
-# ).select(
-#     col("indicator_id"),
-#     col("region_id"),
-#     col("date"),
-#     col("value"),
-#     col("indicator"),
-#     col("region_type"),
-#     col("region"),
-#     col("ingestion_timestamp"),
-#     col("processed_timestamp")
-# ).dropDuplicates(["indicator_id", "region_id", "date"])
+silver_zillow_indicators_clean = silver_zillow_indicators.drop(
+    "ingestion_timestamp", 
+    "source_file",
+    "processed_timestamp",
+    'category'
+)
 
 
-# # Write to Silver layer
-# silver_enriched_data.write \
-#     .format("delta") \
-#     .mode("overwrite") \
-#     .option("overwriteSchema", "true") \
-#     .partitionBy("indicator") \
-#     .save("/datalake/silver/zillow_enriched_data")
 
-# print("Silver Layer completed: Data cleaned and enriched")
+silver_zillow_regions = bronze_zillow_regions \
+    .dropDuplicates(["region_id"]) \
+    .filter(col("region").isNotNull()) \
+    .filter(col("region_type").isNotNull())
+
+silver_zillow_regions_clean = silver_zillow_regions.drop(
+    "ingestion_timestamp",
+    "source_file",
+    "processed_timestamp"
+)
+
+
+# Enrich data by joining metadata with data
+silver_enriched_data = silver_zillow_data.join(
+    silver_zillow_indicators_clean,
+    on="indicator_id",
+    how="left"
+).select(
+    col("indicator_id"),
+    col("region_id"),
+    col("date"),
+    col("value"),
+    col("indicator"),
+    col("ingestion_timestamp"),
+    col("processed_timestamp")
+).dropDuplicates(["indicator_id", "region_id", "date"])
+
+silver_enriched_data = silver_enriched_data.join(
+    silver_zillow_regions_clean,
+    on="region_id",
+    how="left"
+).select(
+    col("indicator_id"),
+    col("region_id"),
+    col("date"),
+    col("value"),
+    col("indicator"),
+    col("region_type"),
+    col("region"),
+    col("ingestion_timestamp"),
+    col("processed_timestamp")
+).dropDuplicates(["indicator_id", "region_id", "date"])
+
+
+# Write to Silver layer
+silver_enriched_data.write \
+    .format("delta") \
+    .mode("overwrite") \
+    .option("overwriteSchema", "true") \
+    .partitionBy("indicator") \
+    .save("/datalake/silver/zillow_enriched_data")
+
+print("Silver Layer completed: Data cleaned and enriched")
 
 
 print("Starting Gold Layer: Creating Dimension Tables...")
@@ -403,7 +403,7 @@ enriched_gold_data = silver_data_df \
     .withColumn("indicator_id", col("indicator_id")) \
     .withColumn("indicator_name", col("indicator")) \
     .withColumn("indicator_description", get_indicator_desc(col("indicator_id"))) \
-    .withColumn("year_key", year(col("date"))) \
+    .withColumn("year", year(col("date"))) \
     .withColumn("day_name", date_format(col("date"), "EEEE")) \
     .withColumn("week_number", weekofyear(col("date"))) \
     .withColumn("month_number", month(col("date"))) \
@@ -573,20 +573,18 @@ dim_region = (
 # dim_realestate_indicator
 dim_realestate_indicator = (
     enriched_gold_data.select(
-        "indicator_id", "indicator_name", "indicator_description", "region_id"
+        col("indicator_id").alias("realestate_indicator_key"), "indicator_name", "indicator_description", col("region_id").alias("region_key")
     )
-    .where(col("indicator_id").isNotNull())
+    .where(col("realestate_indicator_key").isNotNull())
     .where(col("indicator_name").isNotNull())
     .where(col("indicator_description").isNotNull())
-    .where(col("region_id").isNotNull())
+    .where(col("region_key").isNotNull())
     .distinct()
-    .withColumn("realestate_indicator_key", monotonically_increasing_id())
     .select(
-        "realestate_indicator_key",
-        "indicator_id",
+        col("realestate_indicator_key"),
+        col("region_key"),
         "indicator_name",
         "indicator_description",
-        col("region_id").alias("region_key"),
     )
 )
 
@@ -598,21 +596,17 @@ dim_time = (
         "week_number",
         "month_number",
         "month_name",
+        "year",
     )
     .where(col("date_key").isNotNull())
     .where(col("day_name").isNotNull())
     .where(col("week_number").isNotNull())
     .where(col("month_number").isNotNull())
     .where(col("month_name").isNotNull())
+    .where(col("year").isNotNull())
     .distinct()
 )
 
-# dim_year
-dim_year = (
-    enriched_gold_data.select("year_key", col("date").alias("date_key"))
-    .where(col("year_key").isNotNull())
-    .distinct()
-)
 
 # (Optional) If you want dim_value, you can keep it, but it is expensive.
 # Here it is simplified; you may remove it and put value/unit in the fact.
@@ -629,31 +623,41 @@ dim_value = (
 # GOLD – Fact
 # ====================================================
 
-# Fact without joining on value/unit (simpler, faster)
+
 fact_value = (
     enriched_gold_data.alias("e")
+    # Join com dim_value para obter value_key
+    .join(
+        dim_value.alias("v"),
+        (col("e.value") == col("v.value"))
+        & (col("e.unit") == col("v.unit")),
+        "inner",
+    )
     .join(
         dim_realestate_indicator.alias("ri"),
-        (col("e.indicator_id") == col("ri.indicator_id"))
+        (col("e.indicator_id") == col("ri.realestate_indicator_key"))
         & (col("e.region_id") == col("ri.region_key")),
         "inner",
     )
     .join(
-        dim_year.alias("y"),
-        col("e.year_key") == col("y.year_key"),
+        dim_time.alias("d"),
+        col("e.date") == col("d.date_key"),
         "inner",
     )
+    .join(                       
+        dim_region.alias("r"),
+        col("e.region_id") == col("r.region_key"),
+        "left",
+    )
     .select(
-        col("y.year_key").alias("year_key"),
-        lit(None).cast("integer").alias("asset_key"),
+        col("v.value_key").alias("value_key"),
         lit(None).cast("integer").alias("socioeconomical_indicator_key"),
         col("ri.realestate_indicator_key").alias(
             "realestate_indicator_key"
         ),
         lit(None).cast("integer").alias("cryptostock_value_key"),
-        col("e.date").alias("date_key"),
-        col("e.value"),
-        col("e.unit"),
+        col("r.country_key").alias("country_key"),
+        col("d.date_key").alias("date_key"),
     )
 )
 
@@ -673,10 +677,9 @@ dim_zip.write.format("delta").mode("overwrite").save("/datalake/gold/dim_zip")
 dim_neighborhood.write.format("delta").mode("overwrite").save("/datalake/gold/dim_neighborhood")
 dim_region.write.format("delta").mode("overwrite").save("/datalake/gold/dim_region")
 dim_realestate_indicator.write.format("delta").mode("overwrite").save("/datalake/gold/dim_realestate_indicator")
-dim_year.write.format("delta").mode("overwrite").save("/datalake/gold/dim_year")
 dim_time.write.format("delta").mode("overwrite").save("/datalake/gold/dim_time")
 dim_value.write.format("delta").mode("overwrite").save("/datalake/gold/dim_value")
-fact_value.write.format("delta").mode("overwrite").partitionBy("year_key").save("/datalake/gold/fact_value")
+fact_value.write.format("delta").mode("overwrite").save("/datalake/gold/fact_value")
 
 print("Gold Layer completed: Dimension and fact tables created")
 
