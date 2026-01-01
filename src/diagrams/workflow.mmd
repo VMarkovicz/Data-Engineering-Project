@@ -2,11 +2,16 @@ erDiagram
 	direction TB
 	dim_cryptostock_value {
 		INTEGER cryptostock_value_key PK "" 
-		ENUM type ""
 		DECIMAL high  ""  
 		DECIMAL low  ""  
 		DECIMAL volume  ""
 		DECIMAL close  ""   
+	}
+
+	dim_asset {
+		INTEGER asset_key PK "" 
+		VARCHAR ticker ""
+		ENUM type ""
 	}
 
 	dim_socioeconomical_indicator {
@@ -99,7 +104,8 @@ erDiagram
 		VARCHAR realstate_indicator_key FK ""  
 		varchar cryptostock_value_key FK ""  
 		INTEGER country_key PK ""  
-		DATE date_key FK ""  
+		DATE date_key FK ""
+		INTEGER asset_key FK ""
 	}
 
 	dim_time||--o{fact_value:"year_key"
@@ -122,3 +128,4 @@ erDiagram
 	dim_zip||--o{dim_region:"references"
 	dim_neighborhood||--o{dim_region:"references"
 	dim_region||--o{dim_realstate_indicator:"references"
+	dim_asset||--o{fact_value:"references"

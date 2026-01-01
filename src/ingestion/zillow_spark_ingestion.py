@@ -658,6 +658,7 @@ fact_value = (
         lit(None).cast("integer").alias("cryptostock_value_key"),
         col("r.country_key").alias("country_key"),
         col("d.date_key").alias("date_key"),
+        lit(None).cast("integer").alias("asset_key"),
     )
 )
 
