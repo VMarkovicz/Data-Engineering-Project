@@ -1,5 +1,5 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, monotonically_increasing_id, current_timestamp, lit, row_number, concat_ws, md5
+from pyspark.sql.functions import col, monotonically_increasing_id, current_timestamp, lit, row_number, concat_ws, md5, make_date, dayofweek, weekofyear, month, date_format
 from pyspark.sql.window import Window
 
 # Initialize Spark Session - Delta JARs already loaded from /opt/spark/jars/
@@ -247,11 +247,28 @@ dim_socio_indicator = silver_metadata_df.select(
     col("description")
 ).distinct()
 
-# Create dim_year
-dim_year = silver_data_df.select(
-    col("year").alias("year_key")
-).distinct() \
-    .orderBy("year_key")
+dim_time_year = (
+    silver_data_df 
+    .withColumn("month_number", lit(12))
+    .withColumn("day_number", lit(31))
+    .withColumn("date_key", make_date(col("year"), col("month_number"), col("day_number")))
+)
+
+dim_time = (
+    dim_time_year
+    .withColumn("day_name",  date_format(col("date_key"), "EEEE"))
+    .withColumn("week_number", weekofyear(col("date_key")))
+    .withColumn("month_name", date_format(col("date_key"), "MMMM"))
+    .select(
+        "date_key",    
+        "day_name",
+        "week_number",
+        "month_number",
+        "month_name",
+        "year",
+    )
+    .distinct()
+)
 
 # Create unit mapping DataFrame
 unit_mapping = spark.createDataFrame(
@@ -267,6 +284,9 @@ enriched_data = silver_data_df.alias("silver") \
     .join(unit_mapping.alias("units"),
           col("silver.series_id") == col("units.series_id"),
           "left") \
+    .join(dim_time.alias("time"),
+          (col("silver.year") == col("time.year")), 
+            "inner") \
     .withColumn("value_key", 
                 md5(concat_ws("||", 
                              col("silver.value").cast("string"),
@@ -277,7 +297,7 @@ enriched_data = silver_data_df.alias("silver") \
         col("value_key"),
         col("silver.value").alias("value"),
         col("units.unit").alias("unit"),
-        col("silver.year").alias("year_key"),
+        col("time.date_key").alias("date_key"),
         col("silver.series_id").alias("socioeconomical_indicator_key"),
         col("country.country_key").alias("country_key")
     )
@@ -299,7 +319,7 @@ dim_value = enriched_data.select(
 fact_value = enriched_data.select(
     "value_key",
     lit(None).cast("string").alias("asset_key"),
-    "year_key",
+    "date_key",
     "socioeconomical_indicator_key",
     lit(None).cast("string").alias("realstate_indicator_key"),
     lit(None).cast("string").alias("cryptostock_value_key"),
@@ -307,16 +327,16 @@ fact_value = enriched_data.select(
 ).dropDuplicates([
     "socioeconomical_indicator_key",
     "country_key",
-    "year_key"
+    "date_key"
 ])
 
 # Write to Gold layer
 print("Writing Gold layer tables...")
 dim_country.write.format("parquet").mode("overwrite").save("/datalake/gold/dim_country")
 dim_socio_indicator.write.format("parquet").mode("overwrite").save("/datalake/gold/dim_socioeconomical_indicator")
-dim_year.write.format("parquet").mode("overwrite").save("/datalake/gold/dim_year")
+dim_time.write.format("parquet").mode("overwrite").save("/datalake/gold/dim_time")
 dim_value.write.format("parquet").mode("overwrite").save("/datalake/gold/dim_value")
-fact_value.write.format("parquet").mode("overwrite").partitionBy("year_key").save("/datalake/gold/fact_value_wb")
+fact_value.write.format("parquet").mode("overwrite").save("/datalake/gold/fact_value_wb")
 
 # Unpersist cache
 enriched_data.unpersist()
@@ -329,7 +349,7 @@ print("Gold Layer completed: Dimension tables ready for DuckDB")
 print("\n=== Medallion Architecture Summary ===")
 print(f"Bronze: Raw data ingested from CSV files")
 print(f"Silver: {silver_enriched_data.count()} cleaned and enriched records")
-print(f"Gold: {dim_country.count()} countries, {dim_year.count()} years")
+print(f"Gold: {dim_country.count()} countries, {dim_time.count()} years")
 print(f"Gold: {fact_value.count()} fact records ready for analytics")
 
 spark.stop()
