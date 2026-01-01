@@ -1,0 +1,27 @@
+FROM apache/spark:3.5.0
+
+USER root
+
+WORKDIR /opt/spark/work-dir
+
+# Copy Spark-specific requirements
+COPY requirements-spark.txt /opt/spark/work-dir/requirements-spark.txt
+
+ENV MAX_JOBS=1
+ENV SETUPTOOLS_USE_DISTUTILS=stdlib
+
+# Install Python packages
+RUN pip install --no-cache-dir -r /opt/spark/work-dir/requirements-spark.txt
+
+# Download Delta Lake JARs
+RUN curl -L -o /opt/spark/jars/delta-spark_2.12-3.2.0.jar \
+    https://repo1.maven.org/maven2/io/delta/delta-spark_2.12/3.2.0/delta-spark_2.12-3.2.0.jar && \
+    curl -L -o /opt/spark/jars/delta-storage-3.2.0.jar \
+    https://repo1.maven.org/maven2/io/delta/delta-storage/3.2.0/delta-storage-3.2.0.jar
+
+# Create symlink for python (optional, for convenience)
+RUN ln -s /usr/bin/python3 /usr/bin/python
+
+USER 185
+
+WORKDIR /opt/spark/work-dir

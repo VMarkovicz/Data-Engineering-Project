@@ -1,6 +1,14 @@
 # Data Engineering Project
 
+### Docker run apache spark with delta support command
 
+```sh
+docker exec spark-run spark-submit \            
+  --master spark://spark-master:7077 \
+  --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension \
+  --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog \
+  /opt/src/datalake/wb_spark_ingestion.py
+```
 
 ## Getting started
 

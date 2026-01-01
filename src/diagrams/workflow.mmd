@@ -1,49 +1,31 @@
 erDiagram
 	direction TB
-	dim_year {
-		INTEGER year_key PK ""  
-	}
-
-	dim_time {
-		DATE date_key PK ""  
-		VARCHAR day_name  ""  
-		INTEGER week_number  ""  
-		INTEGER month_number  ""  
-		VARCHAR month_name  ""  
-		INTEGER year_key FK ""  
-	}
-
 	dim_cryptostock_value {
-		INTEGER cryptostock_value_key PK ""  
-		INTEGER stock_price_key FK ""  
-		INTEGER crypto_price_key FK ""  
+		INTEGER cryptostock_value_key PK "" 
+		ENUM type ""
 		DECIMAL high  ""  
 		DECIMAL low  ""  
-		DECIMAL volume  ""  
-	}
-
-	dim_stock_price {
-		INTEGER stock_price_key PK ""  
-		DECIMAL open  ""  
-	}
-
-	dim_crypto_price {
-		INTEGER crypto_price_key PK ""  
-		DECIMAL mid  ""  
-		DECIMAL last  ""  
-		DECIMAL bid  ""  
-		DECIMAL ask  ""  
-	}
-
-	dim_asset {
-		VARCHAR asset_key PK ""  
-		ENUM type  ""  
+		DECIMAL volume  ""
+		DECIMAL close  ""   
 	}
 
 	dim_socioeconomical_indicator {
 		VARCHAR socioeconomical_indicator_key PK ""  
 		VARCHAR name  ""  
 		TEXT description  ""  
+	}
+
+	dim_country {
+		INTEGER country_key PK ""  
+		VARCHAR country_name  ""  
+		VARCHAR country_code  ""  
+	}
+
+	dim_state {
+		INTEGER state_key PK ""  
+		VARCHAR state_name  ""  
+		VARCHAR state_code  ""  
+		INTEGER country_key FK ""  
 	}
 
 	dim_metro {
@@ -80,17 +62,8 @@ erDiagram
 	dim_realstate_indicator {
 		VARCHAR realstate_indicator_key PK ""  
 		INTEGER region_key FK ""  
-		VARCHAR realstate_indicator_name  ""  
-		TEXT realstate_indicator_description  ""  
-	}
-
-	fact_value {
-		INTEGER value_key FK ""  
-		VARCHAR asset_key FK ""  
-		INTEGER year_key FK ""  
-		VARCHAR socioeconomical_indicator_key FK ""  
-		VARCHAR realstate_indicator_key FK ""  
-		varchar cryptostock_value_key FK ""  
+		VARCHAR indicator_name  ""  
+		TEXT indicator_description  ""  
 	}
 
 	dim_value {
@@ -99,21 +72,8 @@ erDiagram
 		ENUM unit  ""  
 	}
 
-	dim_country {
-		VARCHAR country_key PK ""  
-		VARCHAR country_name  ""  
-	}
-
-	dim_state {
-		INTEGER state_key PK ""  
-		VARCHAR state_name  ""  
-		VARCHAR state_code  ""  
-		VARCHAR country_key FK ""  
-	}
-
 	dim_region {
 		INTEGER region_key PK ""  
-		VARCHAR region_id UK ""  
 		VARCHAR region_type  ""  
 		INTEGER zip_key FK ""  
 		INTEGER neighborhood_key FK ""  
@@ -121,18 +81,33 @@ erDiagram
 		INTEGER county_key FK ""  
 		INTEGER metro_key FK ""  
 		INTEGER state_key FK ""  
-		VARCHAR country_key FK ""  
+		INTEGER country_key FK ""  
 	}
 
-	dim_year||--o{fact_value:"year_key"
-	dim_time||--o{dim_year:"date_key"
-	dim_asset||--o{fact_value:"asset_key"
+	dim_time {
+		DATE date_key PK ""  
+		VARCHAR day_name  ""  
+		INTEGER week_number  ""  
+		INTEGER month_number  ""  
+		VARCHAR month_name  ""  
+		INTEGER year  ""  
+	}
+
+	fact_value {
+		INTEGER value_key FK ""  
+		VARCHAR socioeconomical_indicator_key FK ""  
+		VARCHAR realstate_indicator_key FK ""  
+		varchar cryptostock_value_key FK ""  
+		INTEGER country_key PK ""  
+		DATE date_key FK ""  
+	}
+
+	dim_time||--o{fact_value:"year_key"
 	dim_value||--o{fact_value:"value_key"
 	dim_realstate_indicator||--o{fact_value:"references"
+	dim_country||--o{fact_value:"references"
 	dim_cryptostock_value||--o{fact_value:"cryptostock_value_key"
 	dim_socioeconomical_indicator||--o{fact_value:"references"
-	dim_cryptostock_value||--o{dim_stock_price:"stock_price_key"
-	dim_cryptostock_value||--o{dim_crypto_price:"crypto_price_key"
 	dim_state||--o{dim_metro:"contains"
 	dim_metro||--o{dim_county:"contains"
 	dim_county||--o{dim_city:"contains"

@@ -106,4 +106,5 @@ ultralytics-thop==2.0.18
 urllib3==2.6.2
 wcwidth==0.2.14
 webencodings==0.5.1
+delta-spark==3.2.0
 alpaca-py>=0.43.0
