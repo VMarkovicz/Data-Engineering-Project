@@ -1,11 +1,10 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import (
-    col, lit, current_timestamp, to_date, year, month, concat_ws,
-      weekofyear, date_format, row_number, monotonically_increasing_id
+    col, lit, current_timestamp, to_date, year, month,
+    weekofyear, date_format, row_number, to_timestamp, explode, input_file_name, substring
 )
-from pyspark.sql.types import StructType, StructField, StringType, DoubleType, LongType
+from pyspark.sql.types import StringType, DoubleType, IntegerType
 from pyspark.sql.window import Window
-import json
 import os
 
 
@@ -14,89 +13,60 @@ spark = SparkSession.builder \
     .master("spark://spark-master:7077") \
     .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
     .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
+    .config("spark.sql.legacy.timeParserPolicy", "LEGACY") \
     .getOrCreate()
 
 
-raw_data_path = "/opt/raw_datasets/cryptostocks"
+raw_data_path = "/opt/src/raw_datasets/cryptostocks"
 
+wanted_assets = ['BTC/USD', 'ETH/USD', 'SOL/USD', 'MSFT', 'NVDA', 'AAPL', 'AMZN', 'GOOGL', 'META', 'AVGO', 'BRK.B', 'TSLA', 'LLY', 'V', 'JNJ', 'XOM', 'WMT', 'JPM', 'BCH/USD']
 
 print("="*80)
-print("CRYPTOSTOCK SPARK PROCESSING")
+print("CRYPTOSTOCK SPARK PROCESSING - JSON FILES")
 print("="*80)
 
 
 # ============================================================================
-# BRONZE LAYER
+# BRONZE LAYER - FIXED (Handle ISO 8601 timestamps)
 # ============================================================================
-print("\n[BRONZE] Reading JSON files...")
+print("\n[BRONZE] Reading JSON files with Spark...")
 
+json_path = f"{raw_data_path}/*.json"
 
-json_files = [f for f in os.listdir(raw_data_path) if f.endswith('.json')]
+# Read raw JSON with multiline option
+raw_df = spark.read.option("multiline", "true").json(json_path)
 
+print("Raw JSON schema:")
+raw_df.printSchema()
+print(f"Raw files read: {raw_df.count()} JSON objects")
 
-if not json_files:
-    print("⚠️  No JSON files found")
-    spark.stop()
-    exit(0)
-
-
-all_data = []
-
-
-for json_file in json_files:
-    filepath = os.path.join(raw_data_path, json_file)
-    print(f"Processing {json_file}...")
-    
-    with open(filepath, 'r') as f:
-        data = json.load(f)
-    
-    # Extract ticker from new structure
-    symbol = data.get("symbol", "UNKNOWN")
-    bars = data.get("bars", [])
-    
-    for bar in bars:
-        all_data.append({
-            "symbol": symbol,
-            "timestamp": bar.get("t"),
-            "open": float(bar.get("o", 0)),
-            "high": float(bar.get("h", 0)),
-            "low": float(bar.get("l", 0)),
-            "close": float(bar.get("c", 0)),
-            "volume": int(bar.get("v", 0)),
-            "vwap": float(bar.get("vw", 0)),
-            "trade_count": int(bar.get("n", 0)),
-            "source_file": json_file
-        })
-
-
-if not all_data:
-    print("⚠️  No data extracted")
-    spark.stop()
-    exit(0)
-
-
-schema = StructType([
-    StructField("symbol", StringType(), False),
-    StructField("timestamp", StringType(), False),
-    StructField("open", DoubleType(), True),
-    StructField("high", DoubleType(), True),
-    StructField("low", DoubleType(), True),
-    StructField("close", DoubleType(), True),
-    StructField("volume", LongType(), True),
-    StructField("vwap", DoubleType(), True),
-    StructField("trade_count", LongType(), True),
-    StructField("source_file", StringType(), True)
-])
-
-
-bronze_df = spark.createDataFrame(all_data, schema) \
+# Transform to desired structure
+bronze_df = raw_df \
+    .select(
+        col("symbol"),
+        col("type"),
+        explode(col("bars")).alias("bar"),
+        input_file_name().alias("source_file")
+    ) \
+    .select(
+        col("symbol").cast("string"),
+        # FIX: Extract just the date part (YYYY-MM-DD)
+        substring(col("bar.t"), 1, 10).alias("date"),
+        col("bar.h").cast("double").alias("high"),
+        col("bar.l").cast("double").alias("low"),
+        col("bar.c").cast("double").alias("last"),
+        col("bar.v").cast("long").alias("volume"),
+        col("type").cast("string"),
+        col("source_file").cast("string")
+    ) \
     .withColumn("ingestion_timestamp", current_timestamp())
-
 
 print(f"✅ [BRONZE] {bronze_df.count()} records ingested")
 
+print("\n[DEBUG] Sample bronze data:")
+bronze_df.show(5, truncate=False)
 
-bronze_df.write.format("delta").mode("overwrite").save("/datalake/bronze/cryptostock_stocks")
+bronze_df.write.format("delta").mode("append").save("/datalake/bronze/cryptostock_stocks")
 
 
 # ============================================================================
@@ -104,18 +74,19 @@ bronze_df.write.format("delta").mode("overwrite").save("/datalake/bronze/cryptos
 # ============================================================================
 print("\n[SILVER] Cleaning and transforming...")
 
-
 silver_df = spark.read.format("delta").load("/datalake/bronze/cryptostock_stocks") \
-    .dropDuplicates(["symbol", "timestamp"]) \
-    .filter(col("close").isNotNull()) \
+    .dropDuplicates(["symbol", "date"]) \
+    .filter(col("last").isNotNull()) \
     .filter(col("volume") > 0) \
-    .withColumn("date", to_date(col("timestamp"))) \
-    .withColumn("year", year(col("date"))) \
-    .withColumn("processed_timestamp", current_timestamp())
-
+    .withColumn("date_parsed", to_date(col("date"), "yyyy-MM-dd")) \
+    .withColumn("year", year(col("date_parsed"))) \
+    .withColumn("processed_timestamp", current_timestamp()) \
+    .filter(col("symbol").isin(wanted_assets))
 
 print(f"✅ [SILVER] {silver_df.count()} cleaned records")
 
+print("\n[DEBUG] Sample silver data:")
+silver_df.select("symbol", "date", "date_parsed").show(5, truncate=False)
 
 silver_df.write.format("delta").mode("overwrite").partitionBy("year").save("/datalake/silver/cryptostock_stocks")
 
@@ -125,8 +96,6 @@ silver_df.write.format("delta").mode("overwrite").partitionBy("year").save("/dat
 # ============================================================================
 print("\n[GOLD] Creating dimensional model...")
 
-
-# Read silver data
 silver_data = spark.read.format("delta").load("/datalake/silver/cryptostock_stocks")
 
 
@@ -135,14 +104,14 @@ silver_data = spark.read.format("delta").load("/datalake/silver/cryptostock_stoc
 # ============================================================================
 print("\n[GOLD] Creating dim_time...")
 
-
-dim_time = silver_data.select("date").distinct() \
-    .withColumn("date_key", col("date")) \
-    .withColumn("day_name", date_format(col("date"), "EEEE")) \
-    .withColumn("week_number", weekofyear(col("date"))) \
-    .withColumn("month_number", month(col("date"))) \
-    .withColumn("month_name", date_format(col("date"), "MMMM")) \
-    .withColumn("year", year(col("date"))) \
+dim_time = silver_data.select("date_parsed").distinct() \
+    .filter(col("date_parsed").isNotNull()) \
+    .withColumn("date_key", to_timestamp(col("date_parsed"))) \
+    .withColumn("day_name", date_format(col("date_parsed"), "EEEE")) \
+    .withColumn("week_number", weekofyear(col("date_parsed"))) \
+    .withColumn("month_number", month(col("date_parsed"))) \
+    .withColumn("month_name", date_format(col("date_parsed"), "MMMM")) \
+    .withColumn("year", year(col("date_parsed"))) \
     .select(
         "date_key",
         "day_name",
@@ -152,8 +121,10 @@ dim_time = silver_data.select("date").distinct() \
         "year"
     ).distinct()
 
-
 print(f"✅ [GOLD] dim_time: {dim_time.count()} dates")
+dim_time.show(5, truncate=False)
+
+# FIX: Changed from 'append' to 'overwrite'
 dim_time.write.format("parquet").mode("overwrite").save("/datalake/gold/dim_time")
 
 
@@ -162,114 +133,50 @@ dim_time.write.format("parquet").mode("overwrite").save("/datalake/gold/dim_time
 # ============================================================================
 print("\n[GOLD] Creating dim_asset...")
 
-
-dim_asset = silver_data.select("symbol").distinct() \
+dim_asset = silver_data.select("symbol", "type").distinct() \
     .withColumnRenamed("symbol", "asset_key") \
-    .withColumn("type", lit("STOCK")) \
     .select("asset_key", "type")
 
-
 print(f"✅ [GOLD] dim_asset: {dim_asset.count()} assets")
+
+# FIX: Changed from 'append' to 'overwrite'
 dim_asset.write.format("parquet").mode("overwrite").save("/datalake/gold/dim_asset")
-
-
-# ============================================================================
-# dim_stock_price
-# ============================================================================
-print("\n[GOLD] Creating dim_stock_price...")
-
-
-# Create unique key combining symbol and date
-window_spec = Window.orderBy("symbol", "date")
-
-
-# Keep symbol and date for joining later
-dim_stock_price_full = silver_data.select(
-    col("symbol"),
-    col("date"),
-    col("open")
-).distinct() \
-    .withColumn("stock_price_key", 
-                row_number().over(window_spec).cast("string"))
-
-
-dim_stock_price = dim_stock_price_full.select("stock_price_key", "open")
-
-
-print(f"✅ [GOLD] dim_stock_price: {dim_stock_price.count()} stock prices")
-dim_stock_price.write.format("parquet").mode("overwrite").save("/datalake/gold/dim_stock_price")
 
 
 # ============================================================================
 # dim_cryptostock_value
 # ============================================================================
-print("\n[GOLD] Creating dim_stock_price...")
-
-# Create unique key that includes symbol and date
-dim_stock_price_full = silver_data.select(
-    col("symbol"),
-    col("date"),
-    col("open")
-).distinct() \
-    .withColumn("stock_price_key", 
-                concat_ws("_", col("symbol"), col("date").cast("string")))
-
-dim_stock_price = dim_stock_price_full.select("stock_price_key", "open")
-
-print(f"✅ [GOLD] dim_stock_price: {dim_stock_price.count()} stock prices")
-dim_stock_price.write.format("parquet").mode("overwrite").save("/datalake/gold/dim_stock_price")
-
-
-# ============================================================================
-# dim_cryptostock_value - FIXED
-# ============================================================================
 print("\n[GOLD] Creating dim_cryptostock_value...")
 
-dim_cryptostock_value_full = silver_data.select(
+dim_cryptostock_value_base = silver_data.select(
     col("symbol"),
-    col("date"),
+    col("date_parsed"),
     col("high"),
     col("low"),
-    col("volume")
-).distinct() \
-    .withColumn("stock_price_key", 
-                concat_ws("_", col("symbol"), col("date").cast("string"))) \
-    .join(dim_stock_price_full.select("symbol", "date", "stock_price_key"), 
-          ["symbol", "date", "stock_price_key"], "inner") \
-    .withColumn("cryptostock_value_key", 
-                concat_ws("_", col("symbol"), col("date").cast("string"))) \
-    .withColumn("crypto_price_key", lit(None).cast("string"))
+    col("volume"),
+    col("last")
+).distinct()
 
-dim_cryptostock_value = dim_cryptostock_value_full.select(
-    "cryptostock_value_key",
-    "stock_price_key",
-    "crypto_price_key",
-    "high",
-    "low",
-    "volume"
-)
+window_spec = Window.orderBy("symbol", "date_parsed", "high", "low", "last", "volume")
+
+dim_cryptostock_value = dim_cryptostock_value_base \
+    .withColumn("cryptostock_value_key", row_number().over(window_spec)) \
+    .withColumn("close", col("last")) \
+    .select(
+        col("cryptostock_value_key").cast("integer"),
+        "symbol",
+        "date_parsed",
+        "high",
+        "low",
+        col("volume").cast(DoubleType()).alias("volume"),
+        "close"
+    )
 
 print(f"✅ [GOLD] dim_cryptostock_value: {dim_cryptostock_value.count()} records")
+dim_cryptostock_value.show(5, truncate=False)
+
+# FIX: Changed from 'append' to 'overwrite'
 dim_cryptostock_value.write.format("parquet").mode("overwrite").save("/datalake/gold/dim_cryptostock_value")
-# ============================================================================
-# dim_value
-# ============================================================================
-print("\n[GOLD] Creating dim_value...")
-
-
-# Extract close prices as values
-dim_value_full = silver_data.select(
-    col("close").alias("value")
-).distinct() \
-    .withColumn("value_key", monotonically_increasing_id()) \
-    .withColumn("unit", lit("USD"))
-
-
-dim_value = dim_value_full.select("value_key", "value", "unit")
-
-
-print(f"✅ [GOLD] dim_value: {dim_value.count()} unique values")
-dim_value.write.format("parquet").mode("overwrite").save("/datalake/gold/dim_value")
 
 
 # ============================================================================
@@ -277,86 +184,63 @@ dim_value.write.format("parquet").mode("overwrite").save("/datalake/gold/dim_val
 # ============================================================================
 print("\n[GOLD] Creating fact_value...")
 
-
-# Build the fact table with date_key reference to dim_time
-fact_value = silver_data.select(
-    col("symbol").alias("asset_key"),
-    col("date").alias("date_key"),
-    col("close").alias("value")
-)
-
-
-# Join with dim_value to get value_key
-fact_value = fact_value.join(
-    dim_value_full.select("value", "value_key"),
-    ["value"],
-    "inner"
-)
-
-
-# Join with dim_cryptostock_value to get cryptostock_value_key
-fact_value = fact_value.join(
-    dim_cryptostock_value_full.select("symbol", "date", "cryptostock_value_key") \
-        .withColumnRenamed("symbol", "asset_key") \
-        .withColumnRenamed("date", "date_key"),
-    ["asset_key", "date_key"],
-    "inner"
-)
-
-
-# Final selection with all foreign keys
-fact_value = fact_value.select(
-    "value_key",
-    "asset_key",
-    "date_key",
-    col("cryptostock_value_key").cast("string"),
-    lit(None).cast("string").alias("socioeconomical_indicator_key"),
-    lit(None).cast("string").alias("realstate_indicator_key")
+fact_value_base = silver_data.select(
+    col("symbol"),
+    col("date_parsed"),
+    col("high"),
+    col("low"),
+    col("last").alias("close"),
+    col("volume").cast(DoubleType()).alias("volume")
 ).distinct()
 
+print(f"fact_value_base records: {fact_value_base.count()}")
 
-# Extract year for partitioning
+fact_value = fact_value_base.join(
+    dim_cryptostock_value.select(
+        col("cryptostock_value_key"),
+        col("symbol"),
+        col("date_parsed"),
+        col("high"),
+        col("low"),
+        col("close"),
+        col("volume")
+    ),
+    ["symbol", "date_parsed", "high", "low", "close", "volume"],
+    "inner"
+)
+
+print(f"✅ [GOLD] After join: {fact_value.count()} records")
+
+if fact_value.count() == 0:
+    print("⚠️  WARNING: Join returned 0 records!")
+
+fact_value = fact_value.withColumn("date_key", to_timestamp(col("date_parsed")))
+
+fact_value = fact_value.select(
+    lit(None).cast(IntegerType()).alias("value_key"),
+    col("symbol").alias("asset_key"),
+    "date_key",
+    col("cryptostock_value_key").cast("string"),
+    lit(None).cast(StringType()).alias("socioeconomical_indicator_key"),
+    lit(None).cast(StringType()).alias("realstate_indicator_key"),
+    lit(None).cast(StringType()).alias("country_key")
+).distinct()
+
 fact_value = fact_value.withColumn("year", year(col("date_key")))
 
-
 print(f"✅ [GOLD] fact_value: {fact_value.count()} fact records")
-fact_value.write.format("parquet").mode("overwrite").partitionBy("year").save("/datalake/gold/fact_value")
+fact_value.show(5, truncate=False)
 
-
-# ============================================================================
-# dim_crypto_price (empty placeholder for future crypto data)
-# ============================================================================
-print("\n[GOLD] Creating dim_crypto_price placeholder...")
-
-
-crypto_schema = StructType([
-    StructField("crypto_price_key", StringType(), False),
-    StructField("mid", DoubleType(), True),
-    StructField("last", DoubleType(), True),
-    StructField("bid", DoubleType(), True),
-    StructField("ask", DoubleType(), True)
-])
-
-
-dim_crypto_price = spark.createDataFrame([], crypto_schema)
-
-
-print(f"✅ [GOLD] dim_crypto_price: {dim_crypto_price.count()} records (placeholder)")
-dim_crypto_price.write.format("parquet").mode("overwrite").save("/datalake/gold/dim_crypto_price")
+if fact_value.count() > 0:
+    # FIX: Changed from 'append' to 'overwrite'
+    fact_value.write.format("parquet").mode("overwrite").partitionBy("year").save("/datalake/gold/fact_value")
+    print("✅ fact_value written successfully")
+else:
+    print("⚠️  ERROR: fact_value has 0 records!")
 
 
 print("\n" + "="*80)
 print("✅ PIPELINE COMPLETED SUCCESSFULLY")
 print("="*80)
-print("\nGold Layer Tables Created:")
-print("  - dim_time")
-print("  - dim_asset")
-print("  - dim_stock_price")
-print("  - dim_crypto_price (empty)")
-print("  - dim_cryptostock_value")
-print("  - dim_value")
-print("  - fact_value")
-print("="*80)
-
 
 spark.stop()
