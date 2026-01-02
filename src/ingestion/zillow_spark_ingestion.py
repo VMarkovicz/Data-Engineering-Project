@@ -17,15 +17,15 @@ raw_data_path = "/opt/src/raw_datasets"  # Use Docker mounted path instead of Wi
 print("Starting Bronze Layer: Raw Data Ingestion...")
 
 # Read raw CSV files exactly as they are - USE FORWARD SLASHES
-bronze_zillow_data = spark.read.csv(f"{raw_data_path}/ZILLOW_DATA_962c837a6ccefddddf190101e0bafdaf/ZILLOW_DATA_962c837a6ccefddddf190101e0bafdaf.csv", header=True, inferSchema=True) \
+bronze_zillow_data = spark.read.csv(f"{raw_data_path}/ZILLOW_DATA_962c837a6ccefddddf190101e0bafdaf.csv", header=True, inferSchema=True) \
     .withColumn("ingestion_timestamp", current_timestamp()) \
     .withColumn("source_file", lit("ZILLOW_DATA.csv"))
 
-bronze_zillow_indicators = spark.read.csv(f"{raw_data_path}/ZILLOW_INDICATORS_e93833a53d6c88463446a364cda611cc/ZILLOW_INDICATORS_e93833a53d6c88463446a364cda611cc.csv", header=True, inferSchema=True) \
+bronze_zillow_indicators = spark.read.csv(f"{raw_data_path}/ZILLOW_INDICATORS_e93833a53d6c88463446a364cda611cc.csv", header=True, inferSchema=True) \
     .withColumn("ingestion_timestamp", current_timestamp()) \
     .withColumn("source_file", lit("ZILLOW_INDICATORS.csv"))
 
-bronze_zillow_regions = spark.read.csv(f"{raw_data_path}/ZILLOW_REGIONS_1a51d107db038a83ac171d604cb48d5b/ZILLOW_REGIONS_1a51d107db038a83ac171d604cb48d5b.csv", header=True, inferSchema=True) \
+bronze_zillow_regions = spark.read.csv(f"{raw_data_path}/ZILLOW_REGIONS_1a51d107db038a83ac171d604cb48d5b.csv", header=True, inferSchema=True) \
     .withColumn("ingestion_timestamp", current_timestamp()) \
     .withColumn("source_file", lit("ZILLOW_REGIONS.csv"))
 

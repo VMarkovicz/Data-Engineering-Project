@@ -9,8 +9,7 @@ erDiagram
 	}
 
 	dim_asset {
-		INTEGER asset_key PK "" 
-		VARCHAR ticker ""
+		VARCHAR asset_key PK ""
 		ENUM type ""
 	}
 
@@ -105,7 +104,7 @@ erDiagram
 		varchar cryptostock_value_key FK ""  
 		INTEGER country_key PK ""  
 		DATE date_key FK ""
-		INTEGER asset_key FK ""
+		VARCHAR asset_key FK ""
 	}
 
 	dim_time||--o{fact_value:"year_key"

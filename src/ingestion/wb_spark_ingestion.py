@@ -1,6 +1,7 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, monotonically_increasing_id, current_timestamp, lit, row_number, concat_ws, md5, make_date, dayofweek, weekofyear, month, date_format
+from pyspark.sql.functions import col, monotonically_increasing_id, current_timestamp, lit, row_number, concat_ws, md5, make_date, weekofyear, date_format
 from pyspark.sql.window import Window
+from pyspark.sql.types import IntegerType
 
 # Initialize Spark Session - Delta JARs already loaded from /opt/spark/jars/
 spark = SparkSession.builder \
@@ -318,7 +319,7 @@ dim_value = enriched_data.select(
 # Create fact_value - deduplication by business key
 fact_value = enriched_data.select(
     "value_key",
-    lit(None).cast("string").alias("asset_key"),
+    lit(None).cast(IntegerType()).alias("asset_key"),
     "date_key",
     "socioeconomical_indicator_key",
     lit(None).cast("string").alias("realstate_indicator_key"),

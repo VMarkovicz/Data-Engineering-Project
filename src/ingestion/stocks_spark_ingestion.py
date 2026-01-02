@@ -1,10 +1,9 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import (
-    col, lit, current_timestamp, to_date, year, month, concat_ws,
-    weekofyear, date_format, row_number, to_timestamp, explode, input_file_name,
-    regexp_replace, substring
+    col, lit, current_timestamp, to_date, year, month,
+    weekofyear, date_format, row_number, to_timestamp, explode, input_file_name, substring
 )
-from pyspark.sql.types import StructType, StructField, StringType, DoubleType, LongType
+from pyspark.sql.types import StringType, DoubleType, IntegerType
 from pyspark.sql.window import Window
 import os
 
@@ -218,7 +217,7 @@ if fact_value.count() == 0:
 fact_value = fact_value.withColumn("date_key", to_timestamp(col("date_parsed")))
 
 fact_value = fact_value.select(
-    lit(None).cast(StringType()).alias("value_key"),
+    lit(None).cast(IntegerType()).alias("value_key"),
     col("symbol").alias("asset_key"),
     "date_key",
     col("cryptostock_value_key").cast("string"),
