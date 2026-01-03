@@ -41,7 +41,7 @@ services:
     command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077"]
     environment:
       - SPARK_WORKER_CORES=4
-      - SPARK_WORKER_MEMORY=4G
+      - SPARK_WORKER_MEMORY=6G
     volumes:
       - ./src:/opt/src
       - ./datalake:/datalake

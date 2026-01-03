@@ -17,7 +17,7 @@ raw_data_path = "/opt/src/raw_datasets"  # Use Docker mounted path instead of Wi
 print("Starting Bronze Layer: Raw Data Ingestion...")
 
 # Read raw CSV files exactly as they are - USE FORWARD SLASHES
-bronze_zillow_data = spark.read.csv(f"{raw_data_path}/ZILLOW_DATA_962c837a6ccefddddf190101e0bafdaf.csv", header=True, inferSchema=True) \
+bronze_zillow_data = spark.read.csv(f"{raw_data_path}/ZILLOW_DATA_SAMPLED_1PCT.csv", header=True, inferSchema=True) \
     .withColumn("ingestion_timestamp", current_timestamp()) \
     .withColumn("source_file", lit("ZILLOW_DATA.csv"))
 
@@ -61,26 +61,24 @@ bronze_zillow_regions = spark.read.format("delta").load("/datalake/bronze/zillow
 
 
 # Data Quality Checks & Cleaning
+    # .dropDuplicates(["indicator_id"]) \
 silver_zillow_data = bronze_zillow_data \
-    .dropDuplicates(["indicator_id"]) \
     .filter(col("region_id").isNotNull()) \
     .filter(col("date").isNotNull()) \
     .filter(col("value").isNotNull()) \
+    .filter(col("indicator_id").isin(['SAAW', 'SRAW', 'NRAW', 'IRAW', 'CRAW', 'LRAW', 'RSNA', 'RSSA', 'ZSFH', 'ZATT', 'ZABT', 'ZCON'])) \
+    .filter(col("date") >= lit("2014-01-01")) \
     .withColumn("value", col("value").cast("decimal(30,10)")) \
-    .withColumn("processed_timestamp", current_timestamp())
 
+
+    # .dropDuplicates(["indicator_id"]) \
 silver_zillow_indicators = bronze_zillow_indicators \
-    .dropDuplicates(["indicator_id"]) \
     .filter(col("indicator").isNotNull())
 
 silver_zillow_indicators_clean = silver_zillow_indicators.drop(
-    "ingestion_timestamp", 
     "source_file",
-    "processed_timestamp",
     'category'
 )
-
-
 
 silver_zillow_regions = bronze_zillow_regions \
     .dropDuplicates(["region_id"]) \
@@ -88,11 +86,8 @@ silver_zillow_regions = bronze_zillow_regions \
     .filter(col("region_type").isNotNull())
 
 silver_zillow_regions_clean = silver_zillow_regions.drop(
-    "ingestion_timestamp",
     "source_file",
-    "processed_timestamp"
 )
-
 
 # Enrich data by joining metadata with data
 silver_enriched_data = silver_zillow_data.join(
@@ -100,38 +95,34 @@ silver_enriched_data = silver_zillow_data.join(
     on="indicator_id",
     how="left"
 ).select(
-    col("indicator_id"),
-    col("region_id"),
-    col("date"),
-    col("value"),
-    col("indicator"),
-    col("ingestion_timestamp"),
-    col("processed_timestamp")
-).dropDuplicates(["indicator_id", "region_id", "date"])
+    col("indicator_id").alias("indicator_id"),
+    col("region_id").alias("region_id"),
+    col("date").alias("date"),
+    col("value").alias("value"),
+    col("indicator").alias("indicator"),
+)
 
 silver_enriched_data = silver_enriched_data.join(
     silver_zillow_regions_clean,
     on="region_id",
     how="left"
 ).select(
-    col("indicator_id"),
-    col("region_id"),
-    col("date"),
-    col("value"),
-    col("indicator"),
-    col("region_type"),
-    col("region"),
-    col("ingestion_timestamp"),
-    col("processed_timestamp")
-).dropDuplicates(["indicator_id", "region_id", "date"])
+    col("indicator_id").alias("indicator_id"),
+    col("region_id").alias("region_id"),
+    col("date").alias("date"),
+    col("value").alias("value"),
+    col("indicator").alias("indicator"),
+    col("region_type").alias("region_type"),
+    col("region").alias("region"),
+)
 
 
 # Write to Silver layer
+    # .partitionBy("indicator") \
 silver_enriched_data.write \
     .format("delta") \
     .mode("overwrite") \
     .option("overwriteSchema", "true") \
-    .partitionBy("indicator") \
     .save("/datalake/silver/zillow_enriched_data")
 
 print("Silver Layer completed: Data cleaned and enriched")
@@ -281,16 +272,9 @@ get_unit = {
 # Read from Silver layer
 silver_data_df = spark.read.format("delta").load("/datalake/silver/zillow_enriched_data")
 
-# FIXED: Create dim_country - deduplicate by country_code only
-from pyspark.sql.window import Window
-from pyspark.sql.functions import row_number
-
-window_spec = Window.partitionBy("indicator").orderBy("indicator_id")
-
-## CHAT
-
-from pyspark.sql.types import StructType, StructField, StringType, IntegerType, DecimalType
-from pyspark.sql.functions import udf, split, when, year, dayofweek, weekofyear, month, date_format
+from pyspark.sql import functions as F
+from pyspark.sql.types import StringType
+from pyspark.sql.functions import udf, year, weekofyear, month, date_format
 
 # Define UDFs for your processing functions
 @udf(returnType=StringType())
@@ -301,7 +285,9 @@ def extract_state_code(region, region_type):
     elif region_type == 'metro':
         if ',' in region:
             return region.rsplit(',', 1)[1].strip()
-        return None
+        else:
+            parts = region.split(';')
+            return parts[1] if len(parts) > 1 else None
     elif region_type in ['county', 'city', 'zip', 'neigh']:
         parts = region.split(';')
         return parts[1] if len(parts) > 1 else None
@@ -310,7 +296,7 @@ def extract_state_code(region, region_type):
 @udf(returnType=StringType())
 def extract_state_name(state_code):
     """Convert state code to state name"""
-    return us_code_to_states.get(state_code)
+    return us_code_to_states.get(state_code.strip()) if state_code else None
 
 @udf(returnType=StringType())
 def extract_metro_name(region, region_type):
@@ -410,165 +396,127 @@ enriched_gold_data = silver_data_df \
     .withColumn("month_name", date_format(col("date"), "MMMM")) \
     .withColumn("value", col("value")) \
     .withColumn("unit", get_value_unit(col("indicator_id"))) \
+    .withColumn(
+        "country_key",
+        F.hash("country_code") \
+    ).withColumn(
+        "state_key",
+        F.hash("state_code") \
+    ).withColumn(
+        "metro_key",
+        F.hash("metro_name") \
+    ).withColumn(
+        "county_key",
+        F.hash("county_name") \
+    ).withColumn(
+        "city_key",
+        F.hash("city_name") \
+    ).withColumn(
+        "neighborhood_key",
+        F.hash("neighborhood_name") \
+    )
+
+
+enriched_gold_data.write \
+    .format("delta") \
+    .mode("overwrite") \
+    .option("overwriteSchema", "true") \
+    .save("/datalake/enrgold/enriched_gold_data")
+
 
 dim_country = (
-    enriched_gold_data.select("country_code", "country_name")
+    enriched_gold_data.select("country_key", "country_code", "country_name")
     .where(col("country_code").isNotNull())
     .distinct()
-    .withColumn("country_key", monotonically_increasing_id())
     .select("country_key", "country_name", "country_code")
 )
+dim_country.write.format("delta").mode("overwrite").save("/datalake/gold/dim_country")
 
 # dim_state
 dim_state = (
-    enriched_gold_data.select("country_code", "state_code", "state_name")
+    enriched_gold_data.select("state_key", "country_key", "state_code", "state_name")
     .where(col("state_code").isNotNull())
     .where(col("state_name").isNotNull())
     .distinct()
-    .join(dim_country, "country_code", "inner")
-    .withColumn("state_key", monotonically_increasing_id())
     .select("state_key", "state_name", "state_code", "country_key")
 )
+dim_state.write.format("delta").mode("overwrite").save("/datalake/gold/dim_state")
 
 # dim_metro
 dim_metro = (
-    enriched_gold_data.select("state_code", "metro_name")
+    enriched_gold_data.select("metro_key", "state_key", "metro_name")
     .where(col("metro_name").isNotNull())
     .distinct()
-    .join(dim_state.select("state_code", "state_key"), "state_code", "inner")
-    .withColumn("metro_key", monotonically_increasing_id())
     .select("metro_key", "metro_name", "state_key")
 )
+dim_metro.write.format("delta").mode("overwrite").save("/datalake/gold/dim_metro")
 
 # dim_county
 dim_county = (
-    enriched_gold_data.select("state_code", "metro_name", "county_name")
+    enriched_gold_data.select("county_key", "state_key", "metro_key", "county_name")
     .where(col("county_name").isNotNull())
     .distinct()
-    .join(dim_state.select("state_code", "state_key"), "state_code", "inner")
-    .join(
-        dim_metro.select("metro_name", "metro_key"),
-        "metro_name",
-        "left",
-    )
-    .withColumn("county_key", monotonically_increasing_id())
     .select("county_key", "county_name", "metro_key", "state_key")
 )
+dim_county.write.format("delta").mode("overwrite").save("/datalake/gold/dim_county")
 
 # dim_city
 dim_city = (
-    enriched_gold_data.select("city_name", "county_name", "metro_name")
+    enriched_gold_data.select("city_key", "city_name", "county_key", "metro_key")
     .where(col("city_name").isNotNull())
     .distinct()
-    .join(
-        dim_county.select("county_name", "county_key", "state_key"),
-        "county_name",
-        "left",
-    )
-    .join(
-        dim_metro.select("metro_name", "metro_key"),
-        "metro_name",
-        "left",
-    )
-    .withColumn("city_key", monotonically_increasing_id())
     .select("city_key", "city_name", "county_key", "metro_key")
 )
+dim_city.write.format("delta").mode("overwrite").save("/datalake/gold/dim_city")
 
 # dim_zip
 dim_zip = (
-    enriched_gold_data.select("zip_key", "city_name")
+    enriched_gold_data.select("zip_key", "city_key")
     .where(col("zip_key").isNotNull())
     .distinct()
-    .join(
-        dim_city.select("city_name", "city_key"),
-        "city_name",
-        "left",
-    )
     .select(col("zip_key"), col("city_key"))
 )
+dim_zip.write.format("delta").mode("overwrite").save("/datalake/gold/dim_zip")
 
 # dim_neighborhood
 dim_neighborhood = (
-    enriched_gold_data.select("neighborhood_name", "city_name")
+    enriched_gold_data.select("neighborhood_key", "neighborhood_name", "city_key")
     .where(col("neighborhood_name").isNotNull())
     .distinct()
-    .join(
-        dim_city.select("city_name", "city_key"),
-        "city_name",
-        "left",
-    )
-    .withColumn("neighborhood_key", monotonically_increasing_id())
     .select("neighborhood_key", "neighborhood_name", "city_key")
 )
-
-# dim_region (one row per region_id)
-base_region = (
-    enriched_gold_data.select(
-        "region_id",
-        "region_type",
-        "country_code",
-        "state_code",
-        "metro_name",
-        "county_name",
-        "city_name",
-        "zip_key",
-        "neighborhood_name",
-    )
-    .where(col("region_id").isNotNull())
-    .where(col("region_type").isNotNull())
-    .distinct()
-)
+dim_neighborhood.write.format("delta").mode("overwrite").save("/datalake/gold/dim_neighborhood")
 
 dim_region = (
-    base_region.join(
-        dim_country.select("country_code", "country_key"),
-        "country_code",
-        "left",
-    )
-    .join(
-        dim_state.select("state_code", "state_key"),
-        "state_code",
-        "left",
-    )
-    .join(
-        dim_metro.select("metro_name", "metro_key"),
-        "metro_name",
-        "left",
-    )
-    .join(
-        dim_county.select("county_name", "county_key"),
-        "county_name",
-        "left",
-    )
-    .join(
-        dim_city.select("city_name", "city_key"),
-        "city_name",
-        "left",
-    )
-    .join(
-        dim_zip.select("zip_key", "city_key").withColumnRenamed(
-            "city_key", "zip_city_key"
-        ),
-        "zip_key",
-        "left",
-    )
-    .join(
-        dim_neighborhood.select("neighborhood_name", "neighborhood_key"),
-        "neighborhood_name",
-        "left",
-    )
-    .select(
-        col("region_id").alias("region_key"),
-        "region_type",
-        "country_key",
-        "state_key",
-        "metro_key",
-        "county_key",
-        "city_key",
-        "zip_key",
-        "neighborhood_key",
-    )
+    enriched_gold_data
+        .select(
+            "region_id",
+            "region_type",
+            "country_key",
+            "state_key",
+            "metro_key",
+            "county_key",
+            "city_key",
+            "zip_key",
+            "neighborhood_key",
+        )
+        .where(F.col("region_id").isNotNull())
+        .where(F.col("region_type").isNotNull())
+        .dropDuplicates(["region_id"])
+        .select(
+            F.col("region_id").alias("region_key"),
+            "region_type",
+            "country_key",
+            "state_key",
+            "metro_key",
+            "county_key",
+            "city_key",
+            "zip_key",
+            "neighborhood_key",
+        )
 )
+
+dim_region.write.format("delta").mode("overwrite").save("/datalake/gold/dim_region")
 
 # dim_realestate_indicator
 dim_realestate_indicator = (
@@ -587,6 +535,7 @@ dim_realestate_indicator = (
         "indicator_description",
     )
 )
+dim_realestate_indicator.write.format("delta").mode("overwrite").save("/datalake/gold/dim_realestate_indicator")
 
 # dim_time
 dim_time = (
@@ -606,6 +555,7 @@ dim_time = (
     .where(col("year").isNotNull())
     .distinct()
 )
+dim_time.write.format("delta").mode("overwrite").save("/datalake/gold/dim_time")
 
 
 # (Optional) If you want dim_value, you can keep it, but it is expensive.
@@ -618,6 +568,7 @@ dim_value = (
     .withColumn("value_key", monotonically_increasing_id())
     .select("value_key", "value", "unit")
 )
+dim_value.write.format("delta").mode("overwrite").save("/datalake/gold/dim_value")
 
 # ====================================================
 # GOLD – Fact
@@ -661,25 +612,6 @@ fact_value = (
         lit(None).cast("integer").alias("asset_key"),
     )
 )
-
-print("fact_value schema:")
-fact_value.printSchema()
-
-fact_count = fact_value.count()
-print(f"fact_value row count: {fact_count}")
-
-# Write dimension and fact tables to Gold layer not okay
-dim_country.write.format("delta").mode("overwrite").save("/datalake/gold/dim_country")
-dim_state.write.format("delta").mode("overwrite").save("/datalake/gold/dim_state")
-dim_metro.write.format("delta").mode("overwrite").save("/datalake/gold/dim_metro")
-dim_county.write.format("delta").mode("overwrite").save("/datalake/gold/dim_county")
-dim_city.write.format("delta").mode("overwrite").save("/datalake/gold/dim_city")
-dim_zip.write.format("delta").mode("overwrite").save("/datalake/gold/dim_zip")
-dim_neighborhood.write.format("delta").mode("overwrite").save("/datalake/gold/dim_neighborhood")
-dim_region.write.format("delta").mode("overwrite").save("/datalake/gold/dim_region")
-dim_realestate_indicator.write.format("delta").mode("overwrite").save("/datalake/gold/dim_realestate_indicator")
-dim_time.write.format("delta").mode("overwrite").save("/datalake/gold/dim_time")
-dim_value.write.format("delta").mode("overwrite").save("/datalake/gold/dim_value")
 fact_value.write.format("delta").mode("overwrite").save("/datalake/gold/fact_value")
 
 print("Gold Layer completed: Dimension and fact tables created")

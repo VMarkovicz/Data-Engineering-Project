@@ -7,3 +7,4 @@ airflow
 src/raw_datasets/cryptostocks/*
 **/__pycache__
 .venv
+data_exports/
