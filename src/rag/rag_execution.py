@@ -111,7 +111,7 @@ class EnhancedRAGRetrieval:
         Also identify what types of data are needed:
         - socioeconomic: World Bank indicators (GDP, inflation, unemployment, etc.)
         - cryptostock: Cryptocurrency and stock prices (BTC, ETH, AAPL, etc.)
-        - realstate: Real estate indicators (home prices, rent, etc.)
+        - realestate: Real estate indicators (home prices, rent, etc.)
         
         IMPORTANT: For stocks, ALWAYS extract the TICKER SYMBOL if mentioned. So if you see a company name, convert it to its stock ticker.
         Examples:
@@ -198,7 +198,7 @@ class EnhancedRAGRetrieval:
                         year_key,
                         region_key,
                         socio_indicator_key,
-                        realstate_indicator_key,
+                        realestate_indicator_key,
                         asset_key,
                         1 - (embedding <=> %s::vector) AS similarity
                     FROM rag.doc_chunks
@@ -242,7 +242,7 @@ class EnhancedRAGRetrieval:
                         year_key,
                         region_key,
                         socio_indicator_key,
-                        realstate_indicator_key,
+                        realestate_indicator_key,
                         asset_key,
                         1 - (embedding <=> %s::vector) AS similarity
                     FROM rag.doc_chunks
@@ -286,7 +286,7 @@ class EnhancedRAGRetrieval:
                         year_key,
                         region_key,
                         socio_indicator_key,
-                        realstate_indicator_key,
+                        realestate_indicator_key,
                         asset_key,
                         1 - (embedding <=> %s::vector) AS similarity
                     FROM rag.doc_chunks
@@ -331,7 +331,7 @@ class EnhancedRAGRetrieval:
                         year_key,
                         region_key,
                         socio_indicator_key,
-                        realstate_indicator_key,
+                        realestate_indicator_key,
                         asset_key,
                         1 - (embedding <=> %s::vector) AS similarity
                     FROM rag.doc_chunks
@@ -365,7 +365,7 @@ class EnhancedRAGRetrieval:
         results = {
             "socioeconomic": [],
             "cryptostock": [],
-            "realstate": [],
+            "realestate": [],
             "sub_queries": analysis['sub_queries'],
             "analysis": analysis
         }
@@ -524,25 +524,25 @@ class EnhancedRAGRetrieval:
             results['cryptostock'] = unique_crypto[:docs_per_type]
             print(f"  ✓ Found {len(results['cryptostock'])} documents total")
         
-        if "realstate" in data_types:
+        if "realestate" in data_types:
             print(f"\n🔍 Retrieving {docs_per_type} real estate documents...")
             
             if start_year and end_year:
-                results['realstate'] = self.search_with_time_filter(
+                results['realestate'] = self.search_with_time_filter(
                     main_embedding,
                     start_year,
                     end_year,
-                    {"realstate_indicator_key IS NOT NULL": None},
+                    {"realestate_indicator_key IS NOT NULL": None},
                     docs_per_type
                 )
             else:
-                results['realstate'] = self.search_by_category(
+                results['realestate'] = self.search_by_category(
                     main_embedding,
-                    {"realstate_indicator_key IS NOT NULL": None},
+                    {"realestate_indicator_key IS NOT NULL": None},
                     docs_per_type
                 )
             
-            print(f"  ✓ Found {len(results['realstate'])} documents")
+            print(f"  ✓ Found {len(results['realestate'])} documents")
         
         return results
     
@@ -641,14 +641,14 @@ class EnhancedRAGRetrieval:
         
         context_parts = []
         for i, doc in enumerate(final_docs, start=1):
-            id_, text, year_key, region_key, socio_key, realstate_key, asset_key, similarity = doc
+            id_, text, year_key, region_key, socio_key, realestate_key, asset_key, similarity = doc
             
             category = "Unknown"
             if socio_key:
                 category = "Socioeconomic"
             elif asset_key:
                 category = f"Crypto/Stock ({asset_key})"
-            elif realstate_key:
+            elif realestate_key:
                 category = "Real Estate"
             
             context_parts.append(
@@ -660,11 +660,11 @@ class EnhancedRAGRetrieval:
         print(f"\n📄 Final Context Composition:")
         socio_count = sum(1 for d in final_docs if d[4] is not None)
         crypto_count = sum(1 for d in final_docs if d[6] is not None)
-        realstate_count = sum(1 for d in final_docs if d[5] is not None)
+        realestate_count = sum(1 for d in final_docs if d[5] is not None)
         
         print(f"  - Socioeconomic: {socio_count} docs")
         print(f"  - Crypto/Stock: {crypto_count} docs")
-        print(f"  - Real Estate: {realstate_count} docs")
+        print(f"  - Real Estate: {realestate_count} docs")
         print(f"  - Total: {len(final_docs)} docs\n")
 
         print("\n🔍 Debug: Retrieved indicator codes:")
