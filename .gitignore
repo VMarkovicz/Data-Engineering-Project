@@ -1,6 +1,5 @@
 *.env
 datalake
-**/validation/*
 src/raw_datasets/ZILLOW*
 test.ipynb
 **/airflow/logs/*

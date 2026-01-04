@@ -53,8 +53,8 @@ erDiagram
 		VARCHAR state_code  ""  
 	}
 
-	dim_realstate_indicator {
-		VARCHAR realstate_indicator_key PK ""  
+	dim_realestate_indicator {
+		VARCHAR realestate_indicator_key PK ""  
 		VARCHAR indicator_name  ""  
 		TEXT indicator_description  ""  
 	}
@@ -62,7 +62,7 @@ erDiagram
 	fact_value {
 		INTEGER value_key FK ""  
 		VARCHAR socioeconomical_indicator_key FK ""  
-		VARCHAR realstate_indicator_key FK ""  
+		VARCHAR realestate_indicator_key FK ""  
 		INTEGEER region_key FK ""  
 		varchar cryptostock_value_key FK ""  
 		INTEGER country_key PK ""  
@@ -72,7 +72,7 @@ erDiagram
 
 	dim_time||--o{fact_value:"year_key"
 	dim_value||--o{fact_value:"value_key"
-	dim_realstate_indicator||--o{fact_value:"references"
+	dim_realestate_indicator||--o{fact_value:"references"
 	dim_country||--o{fact_value:"references"
 	dim_cryptostock_value||--o{fact_value:"cryptostock_value_key"
 	dim_socioeconomical_indicator||--o{fact_value:"references"
