@@ -1,12 +1,8 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import (
-    col, lit, current_timestamp, to_date, year, month,
-    weekofyear, date_format, row_number, to_timestamp, explode, input_file_name, substring
+    col, current_timestamp, to_date, year, explode, input_file_name, substring
 )
-from pyspark.sql.types import StringType, DoubleType, IntegerType
-from pyspark.sql.window import Window
 import os
-
 
 spark = SparkSession.builder \
     .appName("Cryptostock_Medallion") \
@@ -16,7 +12,6 @@ spark = SparkSession.builder \
     .config("spark.sql.legacy.timeParserPolicy", "LEGACY") \
     .getOrCreate()
 
-
 raw_data_path = "/opt/src/raw_datasets/cryptostocks"
 
 wanted_assets = ['BTC/USD', 'ETH/USD', 'SOL/USD', 'MSFT', 'NVDA', 'AAPL', 'AMZN', 'GOOGL', 'META', 'AVGO', 'BRK.B', 'TSLA', 'LLY', 'V', 'JNJ', 'XOM', 'WMT', 'JPM', 'BCH/USD']
@@ -25,22 +20,16 @@ print("="*80)
 print("CRYPTOSTOCK SPARK PROCESSING - JSON FILES")
 print("="*80)
 
-
-# ============================================================================
-# BRONZE LAYER - FIXED (Handle ISO 8601 timestamps)
-# ============================================================================
 print("\n[BRONZE] Reading JSON files with Spark...")
 
 json_path = f"{raw_data_path}/*.json"
 
-# Read raw JSON with multiline option
 raw_df = spark.read.option("multiline", "true").json(json_path)
 
 print("Raw JSON schema:")
 raw_df.printSchema()
 print(f"Raw files read: {raw_df.count()} JSON objects")
 
-# Transform to desired structure
 bronze_df = raw_df \
     .select(
         col("symbol"),
@@ -50,7 +39,6 @@ bronze_df = raw_df \
     ) \
     .select(
         col("symbol").cast("string"),
-        # FIX: Extract just the date part (YYYY-MM-DD)
         substring(col("bar.t"), 1, 10).alias("date"),
         col("bar.h").cast("double").alias("high"),
         col("bar.l").cast("double").alias("low"),
@@ -68,10 +56,6 @@ bronze_df.show(5, truncate=False)
 
 bronze_df.write.format("delta").mode("append").save("/datalake/bronze/cryptostock_stocks")
 
-
-# ============================================================================
-# SILVER LAYER
-# ============================================================================
 print("\n[SILVER] Cleaning and transforming...")
 
 silver_df = spark.read.format("delta").load("/datalake/bronze/cryptostock_stocks") \
@@ -89,7 +73,6 @@ print("\n[DEBUG] Sample silver data:")
 silver_df.select("symbol", "date", "date_parsed").show(5, truncate=False)
 
 silver_df.write.format("delta").mode("overwrite").partitionBy("year").save("/datalake/silver/cryptostock_stocks")
-
 
 print("\n" + "="*80)
 print("✅ PIPELINE COMPLETED SUCCESSFULLY")
