@@ -4,26 +4,33 @@ import os
 from datetime import datetime
 from pathlib import Path
 import os
-
+from datetime import date, timedelta
 
 def fetch_cryptostocks_data(symbol, asset_type):
     """Fetch data from Alpaca API"""
     base_url_stocks = "https://data.alpaca.markets/v2/stocks/bars"
     base_url_crypto = "https://data.alpaca.markets/v1beta3/crypto/us/bars"
 
+    yesterday = date.today() - timedelta(days=1)
+    day_before_yesterday = yesterday - timedelta(days=1)
+    yesterday_str = yesterday.strftime("%Y-%m-%d")
+    day_before_yesterday_str = day_before_yesterday.strftime("%Y-%m-%d")
     params = {
         "timeframe": "1Day",
         "symbols": symbol,
-        "start": "2015-01-01",
+        "start": day_before_yesterday_str,
+        "end": day_before_yesterday_str,
         "limit": 1000,
-        "adjustment": "raw",
+        "adjustment": "split",
         "feed": "sip",
         "sort": "asc",
     }
+
     params_crypto = {
         "timeframe": "1Day",
         "symbols": symbol,
-        "start": "2015-01-01",
+        "start": yesterday_str,
+        "end": yesterday_str,
         "limit": 1000,
         "sort": "asc",
     }

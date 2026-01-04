@@ -13,6 +13,8 @@ ENV SETUPTOOLS_USE_DISTUTILS=stdlib
 # Install Python packages
 RUN pip install --no-cache-dir -r /opt/spark/work-dir/requirements-spark.txt
 
+RUN pip install --no-cache-dir duckdb
+
 # Download Delta Lake JARs
 RUN curl -L -o /opt/spark/jars/delta-spark_2.12-3.2.0.jar \
     https://repo1.maven.org/maven2/io/delta/delta-spark_2.12/3.2.0/delta-spark_2.12-3.2.0.jar && \
@@ -21,6 +23,8 @@ RUN curl -L -o /opt/spark/jars/delta-spark_2.12-3.2.0.jar \
 
 # Create symlink for python (optional, for convenience)
 RUN ln -s /usr/bin/python3 /usr/bin/python
+
+RUN mkdir -p /home/spark && chmod 777 /home/spark
 
 USER 185
 
