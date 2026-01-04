@@ -1,13 +1,13 @@
-# app/api/comparison.py
 from fastapi import APIRouter, Depends, HTTPException
 import duckdb
 from data_api_service.app.db import get_duckdb_connection
-
 from src.data_api_service.models.types import (
     TimeRange,
     AssetPriceDaily,
     InflationByYear,
     InflationAdjustedResponse,
+    RealEstatePriceByStateResponse,
+    RealEstatePriceMonthly,
     AssetFilter,
 )
 
@@ -40,7 +40,7 @@ async def get_asset_price_adjusted_to_inflation(
         if not stock_daily_prices:
             raise HTTPException(status_code=404, detail=f"No data found for asset {asset.asset_key}")
         
-        # Fetch inflation data (CPI)
+
         sql_inflation = Services.get_inflation_by_year(
             start_date=time_range.start_date,
             end_date=time_range.end_date,
@@ -112,3 +112,71 @@ async def get_asset_price_adjusted_to_inflation(
         inflation_values=inflation_series,
         series=series,
     )
+@router.get(
+    "/realestate/monthly",
+    response_model=RealEstatePriceByStateResponse,
+    summary="Get real estate prices by state and month",
+    description="Returns monthly aggregated real estate indicators grouped by state and year.",
+)
+async def get_realestate_monthly(
+    reference_year: int,
+    state_code: str,
+    db: duckdb.DuckDBPyConnection = Depends(get_duckdb_connection),
+):
+    try:
+        sql = Services.get_realestate_price_index_by_year_and_state(
+            reference_year=reference_year,
+            state_code=state_code,
+        )
+
+        result = db.sql(sql).fetchall()
+        if not result:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No real estate data found for state {state_code} in the given date range"
+            )
+
+        monthly_rows = [
+            RealEstatePriceMonthly(
+                    month_name=row[6],
+                    avg_value=row[7],
+                    min_value=row[8],
+                    max_value=row[9],
+                    stddev_value=row[10],
+                    data_points=row[11],
+                    unit=row[12],
+                )
+                for row in result
+        ]
+       
+        (
+            realestate_indicator_key,
+            indicator_name,
+            _,
+            state_name,
+            _,
+            year,
+            _,
+            _,
+            _,
+            _,
+            _,
+            _,
+            _,
+        ) = result[0]
+
+        return RealEstatePriceByStateResponse(
+                state=state_name,
+                year=year,
+                indicator_name=indicator_name,
+                indicator_id=realestate_indicator_key,
+                series=monthly_rows,
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Database error in get_realestate_monthly: {str(e)}"
+        )

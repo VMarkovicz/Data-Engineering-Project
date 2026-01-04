@@ -38,3 +38,19 @@ class InflationAdjustedResponse(BaseModel):
     time_range: TimeRange
     inflation_values: list[InflationByYear]
     series: list[AssetPriceDaily]
+
+class RealEstatePriceMonthly(BaseModel):
+    month_name: str = Field(..., description="Name of the month")
+    avg_value: float = Field(..., description="Average value for the month")
+    min_value: float = Field(..., description="Minimum value for the month")
+    max_value: float = Field(..., description="Maximum value for the month")
+    stddev_value: float = Field(..., description="Standard deviation of the value for the month")
+    data_points: int = Field(..., description="Number of data points used to calculate the average")
+    unit: str = Field(..., description="Unit of measurement")
+
+class RealEstatePriceByStateResponse(BaseModel):
+    state: str = Field(..., description="US State abbreviation")
+    year: int = Field(..., description="Calendar year")
+    indicator_name: str = Field(..., description="Name of the indicator")
+    indicator_id: str = Field(..., description="Identifier of the indicator")
+    series: list[RealEstatePriceMonthly]

@@ -135,6 +135,7 @@ services:
       AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
       AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
       AIRFLOW__WEBSERVER__SECRET_KEY: 'secret'
+      PROJECT_ROOT: ${PROJECT_ROOT}
     ports:
       - "8081:8080"
     volumes:
@@ -176,6 +177,7 @@ services:
       AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
       AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
       SPARK_MASTER_URL: 'spark://spark-master:7077'
+      PROJECT_ROOT: ${PROJECT_ROOT}
     volumes:
       - ./src/airflow/dags:/opt/airflow/dags
       - ./src/airflow/logs:/opt/airflow/logs
@@ -200,7 +202,7 @@ services:
     depends_on:
       - db
     environment:
-      DUCKDB_PATH: /datalake/analytics/warehouse.duckdb
+      DUCKDB_PATH: /datalake/analytics/warehouse_star.duckdb
       POSTGRES_HOST: db
       POSTGRES_DB: rag_db
       POSTGRES_USER: rag_user
