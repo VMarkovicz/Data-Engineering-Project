@@ -9,7 +9,7 @@ from threading import Lock
 import time
 
 EMBEDDING_MODEL = "text-embedding-3-small"
-BATCH_SIZE = 2048
+BATCH_SIZE = 512
 MAX_WORKERS = 5
 DB_BATCH_SIZE = 50
 
@@ -272,7 +272,7 @@ class FinancialDocumentBuilder:
 def load_cryptostock_data_to_rag_optimized():
     import duckdb
 
-    duckdb_conn = duckdb.connect('./datalake/analytics/warehouse_star.duckdb')
+    duckdb_conn = duckdb.connect('/datalake/analytics/warehouse_star.duckdb')
 
     print("\n" + "=" * 80)
     print("LOADING CRYPTO/STOCK DATA (OPTIMIZED)")
@@ -341,7 +341,7 @@ def load_cryptostock_data_to_rag_optimized():
 def load_socioeconomic_data_to_rag_optimized():
     import duckdb
 
-    duckdb_conn = duckdb.connect('./datalake/analytics/warehouse_star.duckdb')
+    duckdb_conn = duckdb.connect('/datalake/analytics/warehouse_star.duckdb')
 
     print("\n" + "=" * 80)
     print("LOADING SOCIOECONOMIC DATA (OPTIMIZED)")
@@ -413,7 +413,7 @@ def load_realestate_data_to_rag_optimized():
     """Load Zillow real estate data with embeddings."""
     import duckdb
     
-    duckdb_conn = duckdb.connect('./datalake/analytics/warehouse_star.duckdb')
+    duckdb_conn = duckdb.connect('/datalake/analytics/warehouse_star.duckdb')
     
     print("\n" + "=" * 80)
     print("LOADING REAL ESTATE DATA (OPTIMIZED)")
@@ -510,7 +510,7 @@ def load_socioeconomic_multi_year_trends():
     import duckdb
     from itertools import groupby
 
-    duckdb_conn = duckdb.connect('./datalake/analytics/warehouse_star.duckdb')
+    duckdb_conn = duckdb.connect('/datalake/analytics/warehouse_star.duckdb')
 
     print("\n" + "=" * 80)
     print("LOADING SOCIOECONOMIC MULTI-YEAR TRENDS")
@@ -636,7 +636,7 @@ def load_socioeconomic_multi_year_trends():
 def load_socioeconomic_yearly_comparison_documents():
     import duckdb
 
-    duckdb_conn = duckdb.connect('./datalake/analytics/warehouse_star.duckdb')
+    duckdb_conn = duckdb.connect('/datalake/analytics/warehouse_star.duckdb')
 
     print("\n" + "=" * 80)
     print("LOADING SOCIOECONOMIC YEAR-OVER-YEAR COMPARISONS")
@@ -757,7 +757,7 @@ def load_socioeconomic_yearly_comparison_documents():
 def load_monthly_aggregates_optimized():
     import duckdb
 
-    duckdb_conn = duckdb.connect('./datalake/analytics/warehouse_star.duckdb')
+    duckdb_conn = duckdb.connect('/datalake/analytics/warehouse_star.duckdb')
 
     print("\n" + "=" * 80)
     print("LOADING MONTHLY AGGREGATES (OPTIMIZED)")
@@ -861,7 +861,7 @@ def init_db():
 def load_yearly_aggregates_optimized():
     import duckdb
 
-    duckdb_conn = duckdb.connect('./datalake/analytics/warehouse_star.duckdb')
+    duckdb_conn = duckdb.connect('/datalake/analytics/warehouse_star.duckdb')
 
     print("\n" + "=" * 80)
     print("LOADING YEARLY AGGREGATES (OPTIMIZED)")
@@ -965,7 +965,7 @@ def load_yearly_aggregates_optimized():
 def load_yearly_comparison_documents():
     import duckdb
 
-    duckdb_conn = duckdb.connect('./datalake/analytics/warehouse_star.duckdb')
+    duckdb_conn = duckdb.connect('/datalake/analytics/warehouse_star.duckdb')
 
     print("\n" + "=" * 80)
     print("LOADING YEAR-OVER-YEAR COMPARISON DOCUMENTS")
@@ -1065,7 +1065,7 @@ def load_multi_year_trend_documents():
     import duckdb
     from collections import defaultdict
 
-    duckdb_conn = duckdb.connect('./datalake/analytics/warehouse_star.duckdb')
+    duckdb_conn = duckdb.connect('/datalake/analytics/warehouse_star.duckdb')
 
     print("\n" + "=" * 80)
     print("LOADING MULTI-YEAR TREND DOCUMENTS")
@@ -1172,7 +1172,7 @@ def load_realestate_yearly_aggregates():
     """Load yearly aggregates for real estate indicators by STATE (not region)."""
     import duckdb
     
-    duckdb_conn = duckdb.connect('./datalake/analytics/warehouse_star.duckdb')
+    duckdb_conn = duckdb.connect('/datalake/analytics/warehouse_star.duckdb')
     
     print("\n" + "=" * 80)
     print("LOADING REAL ESTATE YEARLY AGGREGATES BY STATE")

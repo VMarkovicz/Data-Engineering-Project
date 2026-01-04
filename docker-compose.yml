@@ -11,6 +11,8 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     restart: unless-stopped
+    networks:
+      - app-network
 
   spark-master:
     build:
@@ -247,7 +249,25 @@ services:
     networks:
       - app-network
     restart: unless-stopped
-
+  rag-api:
+    build:
+      context: .
+      dockerfile: ./src/rag/Dockerfile.rag
+    container_name: rag-api
+    depends_on:
+      - db
+    environment:
+      OPEN_AI_KEY: ${OPEN_AI_KEY}
+      POSTGRES_HOST: db
+      POSTGRES_DB: rag_db
+      POSTGRES_USER: rag_user
+      POSTGRES_PASSWORD: rag_password
+    volumes:
+      - ./src:/app/src
+    networks:
+      - app-network
+    ports:
+      - "8001:8001"
 networks:
   app-network:
     driver: bridge

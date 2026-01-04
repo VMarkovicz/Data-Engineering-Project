@@ -1,0 +1,15 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y build-essential libpq-dev && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+
+RUN pip install --no-cache-dir fastapi uvicorn[standard] psycopg2-binary pgvector openai>=1.0.0 python-dotenv
+
+COPY src /app/src
+
+ENV PYTHONPATH=/app/src
+
+CMD ["uvicorn", "rag.main:app", "--host", "0.0.0.0", "--port", "8001"]

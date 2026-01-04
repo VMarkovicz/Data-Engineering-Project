@@ -9,6 +9,7 @@ List of the required tools to run the project.
   - PostgreSQL
 - Python Virtual Environment
   - With libraries listed in requirements.txt
+  - Python >= 3.13
 - Databases
   - World Bank 
     - Already included in the repo.

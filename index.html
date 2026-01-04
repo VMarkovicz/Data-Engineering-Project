@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>RAG Chat Interface</title>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --bg-panel: #020617;
+            --bg-input: #020617;
+            --border: #1f2937;
+            --accent: #38bdf8;
+            --accent-soft: rgba(56, 189, 248, 0.1);
+            --text: #e5e7eb;
+            --text-muted: #9ca3af;
+            --assistant-bg: #020617;
+            --user-bg: #1d2837;
+            --radius: 10px;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+            background: radial-gradient(circle at top, #1e293b 0, #020617 60%, #000 100%);
+            color: var(--text);
+            height: 100vh;
+            display: flex;
+            align-items: stretch;
+            justify-content: center;
+        }
+
+        .app {
+            max-width: 960px;
+            margin: 24px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            border-radius: 16px;
+            border: 1px solid #1f2937;
+            background: linear-gradient(to bottom right, #020617, #020617ee);
+            box-shadow:
+                0 30px 80px rgba(15, 23, 42, 0.9),
+                0 0 0 1px rgba(148, 163, 184, 0.2);
+            overflow: hidden;
+        }
+
+        .app-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: linear-gradient(90deg, rgba(15, 23, 42, 0.95), rgba(15, 23, 42, 0.8));
+        }
+
+        .app-title {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .app-title h1 {
+            margin: 0;
+            font-size: 18px;
+            letter-spacing: 0.03em;
+        }
+
+        .app-title span {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .badge {
+            font-size: 11px;
+            padding: 4px 8px;
+            border-radius: 999px;
+            border: 1px solid var(--accent-soft);
+            background: var(--accent-soft);
+            color: var(--accent);
+        }
+
+        .log {
+            flex: 1;
+            padding: 16px 20px;
+            overflow-y: auto;
+            background: radial-gradient(circle at top, rgba(30, 64, 175, 0.2), transparent 60%);
+        }
+
+        .message-row {
+            margin-bottom: 16px;
+            display: flex;
+        }
+
+        .message-row.user {
+            justify-content: flex-end;
+        }
+
+        .message-bubble {
+            max-width: 80%;
+            padding: 10px 12px;
+            border-radius: var(--radius);
+            font-size: 14px;
+            border: 1px solid rgba(15, 23, 42, 0.8);
+            box-shadow: 0 12px 30px rgba(15, 23, 42, 0.6);
+        }
+
+        .message-row.user .message-bubble {
+            background: linear-gradient(135deg, #0f172a, #1f2937);
+            color: #e5e7eb;
+            border-color: rgba(148, 163, 184, 0.3);
+        }
+
+        .message-row.assistant .message-bubble {
+            background: linear-gradient(135deg, #020617, #020617);
+            color: #e5e7eb;
+            border-color: rgba(56, 189, 248, 0.3);
+        }
+
+        .message-meta {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+            opacity: 0.9;
+        }
+
+        .assistant-content h1,
+        .assistant-content h2,
+        .assistant-content h3 {
+            margin: 6px 0 4px;
+            font-size: 15px;
+            font-weight: 600;
+            color: #e5e7eb;
+        }
+
+        .assistant-content p {
+            margin: 4px 0;
+            line-height: 1.5;
+        }
+
+        .assistant-content ul {
+            margin: 4px 0 4px 18px;
+            padding-left: 0;
+        }
+
+        .assistant-content li {
+            margin: 2px 0;
+        }
+
+        .assistant-content strong {
+            font-weight: 600;
+            color: #e5e7eb;
+        }
+
+        .assistant-content code {
+            font-family: ui-monospace, Menlo, Monaco, "SF Mono", monospace;
+            font-size: 12px;
+            background: rgba(15, 23, 42, 0.9);
+            padding: 2px 4px;
+            border-radius: 4px;
+            border: 1px solid rgba(148, 163, 184, 0.3);
+        }
+
+        .assistant-content pre {
+            margin: 4px 0;
+            padding: 8px;
+            background: rgba(15, 23, 42, 0.95);
+            border-radius: 6px;
+            overflow-x: auto;
+            border: 1px solid rgba(148, 163, 184, 0.4);
+        }
+
+        .input-panel {
+            border-top: 1px solid var(--border);
+            padding: 10px 16px 14px;
+            background: var(--bg-panel);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .input-row {
+            display: flex;
+            align-items: flex-end;
+            gap: 8px;
+        }
+
+        .input-box {
+            flex: 1;
+            background: var(--bg-input);
+            border-radius: 999px;
+            padding: 10px 14px;
+            border: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .input-box textarea {
+            flex: 1;
+            border: none;
+            outline: none;
+            background: transparent;
+            resize: none;
+            color: var(--text);
+            max-height: 120px;
+            font-size: 14px;
+        }
+
+        .input-box textarea::placeholder {
+            color: var(--text-muted);
+        }
+
+        .send-button {
+            border-radius: 999px;
+            border: none;
+            padding: 10px 16px;
+            background: linear-gradient(135deg, #38bdf8, #0ea5e9);
+            color: white;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            box-shadow:
+                0 10px 25px rgba(56, 189, 248, 0.5),
+                0 0 0 1px rgba(15, 23, 42, 0.8);
+            transition: transform 0.08s ease-out, box-shadow 0.08s ease-out, opacity 0.1s;
+        }
+
+        .send-button:hover {
+            transform: translateY(-1px);
+            box-shadow:
+                0 14px 30px rgba(56, 189, 248, 0.6),
+                0 0 0 1px rgba(15, 23, 42, 0.9);
+        }
+
+        .send-button:active {
+            transform: translateY(0);
+            box-shadow:
+                0 6px 18px rgba(56, 189, 248, 0.5),
+                0 0 0 1px rgba(15, 23, 42, 0.9);
+        }
+
+        .send-button.disabled {
+            opacity: 0.6;
+            cursor: default;
+            transform: none;
+            box-shadow:
+                0 0 0 1px rgba(15, 23, 42, 0.7);
+        }
+
+        .status-line {
+            font-size: 11px;
+            color: var(--text-muted);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 999px;
+            margin-right: 6px;
+            display: inline-block;
+            background: #22c55e;
+            box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.15);
+        }
+
+        .status-left {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .status-right {
+            opacity: 0.8;
+        }
+
+        @media (max-width: 700px) {
+            .app {
+                margin: 0;
+                border-radius: 0;
+            }
+
+            .message-bubble {
+                max-width: 90%;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="app">
+        <header class="app-header">
+            <div class="app-title">
+                <h1>RAG Financial Assistant</h1>
+                <span>Backed by your pgvector + OpenAI pipeline</span>
+            </div>
+            <div class="badge">Local API · /v1/chat/completions</div>
+        </header>
+
+        <main id="log" class="log"></main>
+
+        <section class="input-panel">
+            <div class="input-row">
+                <div class="input-box">
+                    <textarea id="input" rows="1"
+                        placeholder="Ask something like “What was USA GDP trend 2014–2020 and how did Bitcoin behave?”"></textarea>
+                </div>
+                <button id="send" class="send-button">
+                    <span>Send</span>
+                    <span>➤</span>
+                </button>
+            </div>
+            <div class="status-line">
+                <div class="status-left">
+                    <span class="dot"></span>
+                    <span id="status-text">Idle</span>
+                </div>
+                <div class="status-right">
+                    Enter ↵ to send · Shift+Enter for newline
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <script>
+        const API_URL = "http://localhost:8001/v1/chat/completions";
+        const MODEL = "gpt-4o-mini-2024-07-18";
+
+        const logEl = document.getElementById("log");
+        const inputEl = document.getElementById("input");
+        const sendBtn = document.getElementById("send");
+        const statusText = document.getElementById("status-text");
+
+        function appendUserMessage(text) {
+            const row = document.createElement("div");
+            row.className = "message-row user";
+            row.innerHTML = `
+        <div class="message-bubble">
+          <div class="message-meta">You</div>
+          <div>${escapeHtml(text)}</div>
+        </div>
+      `;
+            logEl.appendChild(row);
+            scrollToBottom();
+        }
+
+        function appendAssistantMessage(markdownText) {
+            const row = document.createElement("div");
+            row.className = "message-row assistant";
+
+            const bubble = document.createElement("div");
+            bubble.className = "message-bubble";
+
+            const meta = document.createElement("div");
+            meta.className = "message-meta";
+            meta.textContent = "RAG Assistant";
+
+            const content = document.createElement("div");
+            content.className = "assistant-content";
+            content.innerHTML = renderMarkdownLite(markdownText);
+
+            bubble.appendChild(meta);
+            bubble.appendChild(content);
+            row.appendChild(bubble);
+            logEl.appendChild(row);
+
+            scrollToBottom();
+        }
+
+        function scrollToBottom() {
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        function escapeHtml(str) {
+            return str
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;");
+        }
+
+        // Minimal Markdown renderer for headings, bold, bullets, code
+        function renderMarkdownLite(md) {
+            if (!md) return "";
+
+            const lines = md.split(/\r?\n/);
+            let html = "";
+            let inList = false;
+            let inCodeBlock = false;
+
+            for (let line of lines) {
+                // fenced code block ```
+                if (/^```/.test(line.trim())) {
+                    if (!inCodeBlock) {
+                        html += "<pre><code>";
+                        inCodeBlock = true;
+                    } else {
+                        html += "</code></pre>";
+                        inCodeBlock = false;
+                    }
+                    continue;
+                }
+
+                if (inCodeBlock) {
+                    html += escapeHtml(line) + "\n";
+                    continue;
+                }
+
+                const trimmed = line.trim();
+
+                // headings
+                if (/^###\s+/.test(trimmed)) {
+                    if (inList) {
+                        html += "</ul>";
+                        inList = false;
+                    }
+                    const text = trimmed.replace(/^###\s+/, "");
+                    html += `<h3>${inlineFormat(text)}</h3>`;
+                    continue;
+                }
+                if (/^##\s+/.test(trimmed)) {
+                    if (inList) {
+                        html += "</ul>";
+                        inList = false;
+                    }
+                    const text = trimmed.replace(/^##\s+/, "");
+                    html += `<h2>${inlineFormat(text)}</h2>`;
+                    continue;
+                }
+                if (/^#\s+/.test(trimmed)) {
+                    if (inList) {
+                        html += "</ul>";
+                        inList = false;
+                    }
+                    const text = trimmed.replace(/^#\s+/, "");
+                    html += `<h1>${inlineFormat(text)}</h1>`;
+                    continue;
+                }
+
+                // bullet list
+                if (/^[-*]\s+/.test(trimmed)) {
+                    if (!inList) {
+                        html += "<ul>";
+                        inList = true;
+                    }
+                    const text = trimmed.replace(/^[-*]\s+/, "");
+                    html += `<li>${inlineFormat(text)}</li>`;
+                    continue;
+                } else if (inList && trimmed === "") {
+                    html += "</ul>";
+                    inList = false;
+                    continue;
+                }
+
+                // blank line
+                if (trimmed === "") {
+                    html += "<p></p>";
+                    continue;
+                }
+
+                // normal paragraph
+                html += `<p>${inlineFormat(trimmed)}</p>`;
+            }
+
+            if (inList) html += "</ul>";
+            if (inCodeBlock) html += "</code></pre>";
+
+            return html;
+        }
+
+        function inlineFormat(text) {
+            if (!text) return "";
+
+            // escape HTML first
+            let out = escapeHtml(text);
+
+            // bold **text**
+            out = out.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+
+            // inline code `code`
+            out = out.replace(/`([^`]+)`/g, "<code>$1</code>");
+
+            return out;
+        }
+
+        async function sendMessage() {
+            const text = inputEl.value.trim();
+            if (!text) return;
+
+            appendUserMessage(text);
+            inputEl.value = "";
+            autoResize();
+            setSending(true);
+
+            try {
+                const res = await fetch(API_URL, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        model: MODEL,
+                        messages: [{ role: "user", content: text }]
+                    })
+                });
+
+                if (!res.ok) {
+                    const errorText = await res.text();
+                    appendAssistantMessage(`Error: HTTP ${res.status}\n\n\`${errorText}\``);
+                    return;
+                }
+
+                const data = await res.json();
+                const answer = data.choices?.[0]?.message?.content || "(no content)";
+                appendAssistantMessage(answer);
+            } catch (err) {
+                appendAssistantMessage("Error contacting API:\n\n`" + err + "`");
+            } finally {
+                setSending(false);
+            }
+        }
+
+        function setSending(sending) {
+            if (sending) {
+                statusText.textContent = "Thinking…";
+                sendBtn.classList.add("disabled");
+                sendBtn.disabled = true;
+            } else {
+                statusText.textContent = "Idle";
+                sendBtn.classList.remove("disabled");
+                sendBtn.disabled = false;
+            }
+        }
+
+        function autoResize() {
+            inputEl.style.height = "auto";
+            inputEl.style.height = inputEl.scrollHeight + "px";
+        }
+
+        // Events
+        sendBtn.addEventListener("click", (e) => {
+            e.preventDefault();
+            sendMessage();
+        });
+
+        inputEl.addEventListener("keydown", (e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        inputEl.addEventListener("input", autoResize);
+
+        // initial UI
+        appendAssistantMessage("### RAG Assistant\n\nAsk a question about macro indicators, crypto, stocks, or real estate. Context comes from your Postgres + pgvector RAG pipeline.");
+    </script>
+</body>
+
+</html>

@@ -172,9 +172,22 @@ cleanup = DockerOperator(
     dag=dag,
 )
 
+generate_rag_documents = DockerOperator(
+    task_id='generate_rag_documents',
+    image='data-engineering-project-spark-master',
+    api_version='auto',
+    auto_remove=True,
+    mount_tmp_dir=False,
+    command='python /opt/src/rag/postgres_vector.py',
+    docker_url='unix://var/run/docker.sock',
+    network_mode='data-engineering-project_default',
+    mounts=COMMON_MOUNTS,
+    dag=dag,
+)
+
 unpause_task = PythonOperator(
         task_id="unpause_stocks_daily",
         python_callable=unpause_stocks_daily,
 )
 
-fetch_data >> process_spark_crypto >> process_spark_stocks >> process_spark_wb >> process_spark_zillow >> create_gold_layer >> validate_data >> cleanup >> unpause_task
+fetch_data >> process_spark_crypto >> process_spark_stocks >> process_spark_wb >> process_spark_zillow >> create_gold_layer >> validate_data >> cleanup >> generate_rag_documents >> unpause_task
