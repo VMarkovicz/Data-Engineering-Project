@@ -16,7 +16,7 @@ def fetch_cryptostocks_data(symbol, asset_type):
         "symbols": symbol,
         "start": "2015-01-01",
         "limit": 1000,
-        "adjustment": "raw",
+        "adjustment": "split",
         "feed": "sip",
         "sort": "asc",
     }

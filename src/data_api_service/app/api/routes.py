@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 import duckdb
 from data_api_service.app.db import get_duckdb_connection
 
-from data_api_service.models.outputs import (
+from src.data_api_service.models.types import (
     TimeRange,
     AssetPriceDaily,
     InflationByYear,
@@ -28,10 +28,10 @@ async def get_asset_price_adjusted_to_inflation(
 ):
     if not asset.asset_key:
         raise HTTPException(status_code=400, detail="asset_key is required for this endpoint")
-
+    map_crypto_assets = {"BTC": "BTC/USD", "ETH": "ETH/USD", "SOL": "SOL/USD"}
     try:
         sql = Services.get_asset_price_daily(
-            asset_key=asset.asset_key,
+            asset_key=map_crypto_assets.get(asset.asset_key, asset.asset_key),
             start_date=time_range.start_date,
             end_date=time_range.end_date,
         )
