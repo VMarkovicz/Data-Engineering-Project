@@ -6,8 +6,8 @@ print("=" * 80)
 print("LOADING STAR SCHEMA GOLD LAYER INTO DUCKDB")
 print("=" * 80)
 
-GOLD_PATH = "./datalake/gold"
-DUCKDB_PATH = "./datalake/analytics/warehouse_star.duckdb"
+GOLD_PATH = "/datalake/gold"
+DUCKDB_PATH = "/datalake/analytics/warehouse_star.duckdb"
 
 Path(DUCKDB_PATH).parent.mkdir(parents=True, exist_ok=True)
 

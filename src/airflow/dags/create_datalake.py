@@ -1,9 +1,11 @@
 from airflow import DAG
 from airflow.providers.docker.operators.docker import DockerOperator
+from airflow.operators.python import PythonOperator
 from airflow.utils.dates import days_ago
 from airflow.models import Variable
 from datetime import timedelta
 from docker.types import Mount
+from airflow.models import DagModel
 
 PROJECT_ROOT = Variable.get("PROJECT_ROOT", default_var=".")
 default_args = {
@@ -42,6 +44,10 @@ SPARK_COMMAND = lambda script_path: [
     '--executor-memory', '2g',
     script_path
 ]
+
+def unpause_stocks_daily():
+    dag = DagModel.get_dagmodel("stocks_daily_pipeline")
+    dag.set_is_paused(is_paused=False)
 
 fetch_data = DockerOperator(
     task_id='fetch_stocks_data',
@@ -153,4 +159,22 @@ validate_data = DockerOperator(
     dag=dag,
 )
 
-fetch_data >> process_spark_crypto >> process_spark_stocks >> process_spark_wb >> process_spark_zillow >> create_gold_layer >> validate_data
+cleanup = DockerOperator(
+    task_id='clean_first_cryptostocks_raw_jsons',
+    image='data-engineering-project-spark-master',
+    api_version='auto',
+    auto_remove=True,
+    mount_tmp_dir=False,
+    command='python /opt/src/api_ingestion/clean_cryptostocks_folder.py',
+    docker_url='unix://var/run/docker.sock',
+    network_mode='data-engineering-project_default',
+    mounts=COMMON_MOUNTS,
+    dag=dag,
+)
+
+unpause_task = PythonOperator(
+        task_id="unpause_stocks_daily",
+        python_callable=unpause_stocks_daily,
+)
+
+fetch_data >> process_spark_crypto >> process_spark_stocks >> process_spark_wb >> process_spark_zillow >> create_gold_layer >> validate_data >> cleanup >> unpause_task

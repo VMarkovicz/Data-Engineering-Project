@@ -24,6 +24,8 @@ RUN curl -L -o /opt/spark/jars/delta-spark_2.12-3.2.0.jar \
 # Create symlink for python (optional, for convenience)
 RUN ln -s /usr/bin/python3 /usr/bin/python
 
+RUN mkdir -p /home/spark && chmod 777 /home/spark
+
 USER 185
 
 WORKDIR /opt/spark/work-dir
