@@ -9,7 +9,7 @@ from threading import Lock
 import time
 
 EMBEDDING_MODEL = "text-embedding-3-small"
-BATCH_SIZE = 100
+BATCH_SIZE = 2048
 MAX_WORKERS = 5
 DB_BATCH_SIZE = 50
 
@@ -64,7 +64,7 @@ def batch_insert_chunks(documents: List[Dict[str, Any]]) -> int:
             insert_query = """
                 INSERT INTO rag.doc_chunks (
                     text, embedding, year_key, region_key,
-                    socio_indicator_key, realstate_indicator_key, asset_key
+                    socio_indicator_key, realestate_indicator_key, asset_key
                 )
                 VALUES (%s, %s, %s, %s, %s, %s, %s);
             """
@@ -73,7 +73,7 @@ def batch_insert_chunks(documents: List[Dict[str, Any]]) -> int:
                 (
                     doc['text'], doc['embedding'], doc.get('year_key'),
                     doc.get('region_key'), doc.get('socio_indicator_key'),
-                    doc.get('realstate_indicator_key'), doc.get('asset_key')
+                    doc.get('realestate_indicator_key'), doc.get('asset_key')
                 )
                 for doc in documents
             ]
@@ -134,7 +134,7 @@ class FinancialDocumentBuilder:
             "year_key": year,
             "region_key": None,
             "socio_indicator_key": None,
-            "realstate_indicator_key": None,
+            "realestate_indicator_key": None,
             "asset_key": code,
         }
 
@@ -183,7 +183,88 @@ class FinancialDocumentBuilder:
             "year_key": year,
             "region_key": None,
             "socio_indicator_key": series_id,
-            "realstate_indicator_key": None,
+            "realestate_indicator_key": None,
+            "asset_key": None,
+        }
+    
+    
+    @staticmethod
+    def build_realestate_document(record: Dict[str, Any]) -> Dict[str, Any]:
+        """Convert Zillow real estate data into natural language."""
+        # Region information (may be partial depending on region_type)
+        region_type = record.get('region_type', 'unknown')
+        region_key = record.get('region_key')
+
+        country_code = record['country_code']
+        country_name = record['country_name']
+        
+        # Build location description based on available fields
+        location_parts = []
+        if record.get('neighborhood_name'):
+            location_parts.append(f"neighborhood {record['neighborhood_name']}")
+        if record.get('city_name'):
+            location_parts.append(f"City {record['city_name']}")
+        if record.get('county_name'):
+            location_parts.append(f"{record['county_name']} County")
+        if record.get('metro_name'):
+            location_parts.append(f"{record['metro_name']} metro area")
+        if record.get('state_name'):
+            location_parts.append(f"State name {record['state_name']}")
+        if record.get('state_code'):
+            location_parts.append(f"State code {record['state_code']}")
+        if record.get('zip_key'):
+            location_parts.append(f"ZIP {record['zip_key']}")
+        if country_name:
+            location_parts.append(f"{country_name} ({country_code})")
+        
+        location_desc = ", ".join(location_parts) if location_parts else "unspecified location"
+        
+        # Indicator information
+        indicator_key = record['realestate_indicator_key']
+        indicator_name = record['indicator_name']
+        indicator_desc = record.get('indicator_description', 'real estate market metric')
+        
+        # Value information
+        value = record['value']
+        unit = record.get('unit', 'UNITS')
+        
+        # Date information
+        year = record['year']
+        month = record['month_number']
+        month_name = record.get('month_name', '')
+        week = record.get('week_number')
+
+        
+        # Format value based on unit type
+        if unit == 'USD_CURRENT':
+            formatted_value = f"${value:,.2f}"
+            unit_desc = "US dollars"
+        elif unit == 'PERCENTAGE':
+            formatted_value = f"{value:.2f}%"
+            unit_desc = "percent"
+        elif unit == 'DAYS':
+            formatted_value = f"{value:.0f} days"
+            unit_desc = "days"
+        else:  # UNITS or other
+            formatted_value = f"{value:,.2f}"
+            unit_desc = "units"
+        
+        # Build comprehensive natural language text
+        text = (
+            f"In {month_name} {year} (week of year {week}), the real estate market in {location_desc} "
+            f"reported the following indicator: "
+            f"Indicator code: {indicator_key}-{indicator_name}, which stands for: {indicator_desc}. "
+            f"The recorded value was {formatted_value} ({unit_desc}). "
+            f"Geographic level: {region_type}. "
+            f"This data provides insight into real estate market conditions and trends for this area in {year}."
+        )
+        
+        return {
+            "text": text,
+            "year_key": year,
+            "region_key": region_key,
+            "socio_indicator_key": None,
+            "realestate_indicator_key": indicator_key,
             "asset_key": None,
         }
 
@@ -191,7 +272,7 @@ class FinancialDocumentBuilder:
 def load_cryptostock_data_to_rag_optimized():
     import duckdb
 
-    duckdb_conn = duckdb.connect('./datalake/analytics/warehouse.duckdb')
+    duckdb_conn = duckdb.connect('./datalake/analytics/warehouse_star.duckdb')
 
     print("\n" + "=" * 80)
     print("LOADING CRYPTO/STOCK DATA (OPTIMIZED)")
@@ -260,7 +341,7 @@ def load_cryptostock_data_to_rag_optimized():
 def load_socioeconomic_data_to_rag_optimized():
     import duckdb
 
-    duckdb_conn = duckdb.connect('./datalake/analytics/warehouse.duckdb')
+    duckdb_conn = duckdb.connect('./datalake/analytics/warehouse_star.duckdb')
 
     print("\n" + "=" * 80)
     print("LOADING SOCIOECONOMIC DATA (OPTIMIZED)")
@@ -328,11 +409,108 @@ def load_socioeconomic_data_to_rag_optimized():
     duckdb_conn.close()
 
 
+def load_realestate_data_to_rag_optimized():
+    """Load Zillow real estate data with embeddings."""
+    import duckdb
+    
+    duckdb_conn = duckdb.connect('./datalake/analytics/warehouse_star.duckdb')
+    
+    print("\n" + "=" * 80)
+    print("LOADING REAL ESTATE DATA (OPTIMIZED)")
+    print("=" * 80)
+    
+    query = """
+        SELECT 
+            dri.realestate_indicator_key,
+            dri.indicator_name,
+            dri.indicator_description,
+            dr.region_key,
+            dr.region_type,
+            dr.zip_key,
+            dr.neighborhood_name,
+            dr.city_name,
+            dr.county_name,
+            dr.metro_name,
+            dr.state_name,
+            dr.state_code,
+            dc.country_name,
+            dc.country_code,
+            dt.year,
+            dt.month_number,
+            dt.month_name,
+            dt.week_number,
+            dt.day_name,
+            dv.value,
+            dv.unit
+        FROM fact_value fv
+        JOIN dim_realestate_indicator dri 
+            ON fv.realestate_indicator_key = dri.realestate_indicator_key
+        JOIN dim_region dr 
+            ON fv.region_key = dr.region_key
+        JOIN dim_country dc 
+            ON dr.country_key = dc.country_key
+        JOIN dim_time dt 
+            ON fv.date_key = dt.date_key
+        JOIN dim_value dv 
+            ON fv.value_key = dv.value_key
+        WHERE fv.realestate_indicator_key IS NOT NULL AND fv.realestate_indicator_key IN ['LRAW' , 'CRAW'] AND fv.date_key BETWEEN '2018-01-01 00:00:00.000' AND '2021-12-31 00:00:00.000'
+        ORDER BY dr.region_key, dt.year DESC, dt.month_number DESC
+        LIMIT 10000;
+
+    """
+    
+    print("Fetching Zillow real estate data from DuckDB...")
+    start_time = time.time()
+    
+    rows = duckdb_conn.execute(query).fetchall()
+    columns = [
+        'realestate_indicator_key', 'indicator_name', 'indicator_description',
+        'region_key', 'region_type', 'zip_key', 'neighborhood_name', 
+        'city_name', 'county_name', 'metro_name', 'state_name', 'state_code',
+        'country_name', 'country_code', 'year', 'month_number', 'month_name',
+        'week_number', 'day_name', 'value', 'unit'
+    ]
+    
+    print(f"✓ Fetched {len(rows)} records in {time.time() - start_time:.2f}s")
+    
+    print("Building real estate documents...")
+    builder = FinancialDocumentBuilder()
+    documents = []
+    
+    for row in rows:
+        record = dict(zip(columns, row))
+        doc = builder.build_realestate_document(record)
+        documents.append(doc)
+    
+    print(f"✓ Built {len(documents)} real estate documents")
+    
+    print(f"\nGenerating embeddings in batches of {BATCH_SIZE}...")
+    start_time = time.time()
+    
+    for i, doc_batch in enumerate(chunked_list(documents, BATCH_SIZE)):
+        texts = [doc['text'] for doc in doc_batch]
+        embeddings = get_embeddings_batch(texts)
+        
+        for doc, embedding in zip(doc_batch, embeddings):
+            doc['embedding'] = embedding
+        
+        batch_insert_chunks(doc_batch)
+        
+        if (i + 1) % 10 == 0:
+            elapsed = time.time() - start_time
+            rate = ((i + 1) * BATCH_SIZE) / elapsed
+            print(f"  Batch {i+1}: {rate:.1f} docs/sec")
+    
+    total_time = time.time() - start_time
+    print(f"\n✅ Loaded {len(documents)} real estate documents in {total_time:.2f}s ({len(documents)/total_time:.1f} docs/sec)")
+    
+    duckdb_conn.close()
+
 def load_socioeconomic_multi_year_trends():
     import duckdb
     from itertools import groupby
 
-    duckdb_conn = duckdb.connect('./datalake/analytics/warehouse.duckdb')
+    duckdb_conn = duckdb.connect('./datalake/analytics/warehouse_star.duckdb')
 
     print("\n" + "=" * 80)
     print("LOADING SOCIOECONOMIC MULTI-YEAR TRENDS")
@@ -431,7 +609,7 @@ def load_socioeconomic_multi_year_trends():
             "year_key": end_year,
             "region_key": None,
             "socio_indicator_key": series_id,
-            "realstate_indicator_key": None,
+            "realestate_indicator_key": None,
             "asset_key": None,
         })
 
@@ -458,7 +636,7 @@ def load_socioeconomic_multi_year_trends():
 def load_socioeconomic_yearly_comparison_documents():
     import duckdb
 
-    duckdb_conn = duckdb.connect('./datalake/analytics/warehouse.duckdb')
+    duckdb_conn = duckdb.connect('./datalake/analytics/warehouse_star.duckdb')
 
     print("\n" + "=" * 80)
     print("LOADING SOCIOECONOMIC YEAR-OVER-YEAR COMPARISONS")
@@ -552,7 +730,7 @@ def load_socioeconomic_yearly_comparison_documents():
             "year_key": curr_year,
             "region_key": None,
             "socio_indicator_key": series_id,
-            "realstate_indicator_key": None,
+            "realestate_indicator_key": None,
             "asset_key": None,
         })
 
@@ -579,7 +757,7 @@ def load_socioeconomic_yearly_comparison_documents():
 def load_monthly_aggregates_optimized():
     import duckdb
 
-    duckdb_conn = duckdb.connect('./datalake/analytics/warehouse.duckdb')
+    duckdb_conn = duckdb.connect('./datalake/analytics/warehouse_star.duckdb')
 
     print("\n" + "=" * 80)
     print("LOADING MONTHLY AGGREGATES (OPTIMIZED)")
@@ -623,7 +801,7 @@ def load_monthly_aggregates_optimized():
             "year_key": year,
             "region_key": None,
             "socio_indicator_key": None,
-            "realstate_indicator_key": None,
+            "realestate_indicator_key": None,
             "asset_key": code,
         })
 
@@ -661,7 +839,7 @@ def init_db():
                     year_key            integer,
                     region_key          integer,
                     socio_indicator_key varchar,
-                    realstate_indicator_key varchar,
+                    realestate_indicator_key varchar,
                     asset_key           varchar,
                     created_at          timestamptz DEFAULT now()
                 );
@@ -683,7 +861,7 @@ def init_db():
 def load_yearly_aggregates_optimized():
     import duckdb
 
-    duckdb_conn = duckdb.connect('./datalake/analytics/warehouse.duckdb')
+    duckdb_conn = duckdb.connect('./datalake/analytics/warehouse_star.duckdb')
 
     print("\n" + "=" * 80)
     print("LOADING YEARLY AGGREGATES (OPTIMIZED)")
@@ -762,7 +940,7 @@ def load_yearly_aggregates_optimized():
             "year_key": year,
             "region_key": None,
             "socio_indicator_key": None,
-            "realstate_indicator_key": None,
+            "realestate_indicator_key": None,
             "asset_key": code,
         })
 
@@ -787,7 +965,7 @@ def load_yearly_aggregates_optimized():
 def load_yearly_comparison_documents():
     import duckdb
 
-    duckdb_conn = duckdb.connect('./datalake/analytics/warehouse.duckdb')
+    duckdb_conn = duckdb.connect('./datalake/analytics/warehouse_star.duckdb')
 
     print("\n" + "=" * 80)
     print("LOADING YEAR-OVER-YEAR COMPARISON DOCUMENTS")
@@ -861,7 +1039,7 @@ def load_yearly_comparison_documents():
             "year_key": curr_year,
             "region_key": None,
             "socio_indicator_key": None,
-            "realstate_indicator_key": None,
+            "realestate_indicator_key": None,
             "asset_key": code,
         })
 
@@ -887,7 +1065,7 @@ def load_multi_year_trend_documents():
     import duckdb
     from collections import defaultdict
 
-    duckdb_conn = duckdb.connect('./datalake/analytics/warehouse.duckdb')
+    duckdb_conn = duckdb.connect('./datalake/analytics/warehouse_star.duckdb')
 
     print("\n" + "=" * 80)
     print("LOADING MULTI-YEAR TREND DOCUMENTS")
@@ -969,7 +1147,7 @@ def load_multi_year_trend_documents():
             "year_key": end_year,
             "region_key": None,
             "socio_indicator_key": None,
-            "realstate_indicator_key": None,
+            "realestate_indicator_key": None,
             "asset_key": code,
         })
 
@@ -990,6 +1168,144 @@ def load_multi_year_trend_documents():
 
     duckdb_conn.close()
 
+def load_realestate_yearly_aggregates():
+    """Load yearly aggregates for real estate indicators by STATE (not region)."""
+    import duckdb
+    
+    duckdb_conn = duckdb.connect('./datalake/analytics/warehouse_star.duckdb')
+    
+    print("\n" + "=" * 80)
+    print("LOADING REAL ESTATE YEARLY AGGREGATES BY STATE")
+    print("=" * 80)
+    
+    query = """
+        SELECT 
+            dri.realestate_indicator_key,
+            dri.indicator_name,
+            dri.indicator_description,
+            dr.state_name,
+            dr.state_code,
+            dt.year,
+            AVG(dv.value) as avg_value,
+            MIN(dv.value) as min_value,
+            MAX(dv.value) as max_value,
+            STDDEV(dv.value) as stddev_value,
+            COUNT(*) as data_points,
+            dv.unit
+        FROM fact_value fv
+        JOIN dim_realestate_indicator dri 
+            ON fv.realestate_indicator_key = dri.realestate_indicator_key
+        JOIN dim_region dr 
+            ON fv.region_key = dr.region_key
+        JOIN dim_time dt 
+            ON fv.date_key = dt.date_key
+        JOIN dim_value dv 
+            ON fv.value_key = dv.value_key
+        WHERE fv.realestate_indicator_key IS NOT NULL
+            AND fv.date_key BETWEEN '2018-01-01 00:00:00.000' AND '2021-12-31 00:00:00.000'
+            AND dr.state_code IS NOT NULL
+        GROUP BY 
+            dri.realestate_indicator_key, 
+            dri.indicator_name,
+            dri.indicator_description,
+            dr.state_name,
+            dr.state_code,
+            dt.year,
+            dv.unit
+        HAVING COUNT(*) >= 3
+        ORDER BY dr.state_code, dt.year DESC, dri.realestate_indicator_key
+        LIMIT 10000;
+    """
+    
+    print("Fetching yearly aggregates by state...")
+    start_time = time.time()
+    
+    rows = duckdb_conn.execute(query).fetchall()
+    columns = [
+        'indicator_key', 'indicator_name', 'indicator_description',
+        'state_name', 'state_code', 'year', 
+        'avg_value', 'min_value', 'max_value', 'stddev_value',
+        'data_points', 'unit'
+    ]
+    
+    print(f"✓ Fetched {len(rows)} state-level yearly aggregates in {time.time() - start_time:.2f}s")
+    
+    print("Building aggregate documents...")
+    documents = []
+    
+    for row in rows:
+        record = dict(zip(columns, row))
+        
+        indicator_key = record['indicator_key']
+        indicator_name = record['indicator_name']
+        indicator_desc = record['indicator_description']
+        state_name = record['state_name']
+        state_code = record['state_code']
+        year = record['year']
+        avg_val = record['avg_value']
+        min_val = record['min_value']
+        max_val = record['max_value']
+        stddev_val = record['stddev_value']
+        data_points = record['data_points']
+        unit = record['unit']
+        
+        # Format values based on unit
+        def format_val(val):
+            if val is None:
+                return "N/A"
+            if unit == 'USD_CURRENT':
+                return f"${val:,.2f}"
+            elif unit == 'PERCENTAGE':
+                return f"{val:.2f}%"
+            elif unit == 'DAYS':
+                return f"{val:.0f} days"
+            else:
+                return f"{val:,.2f}"
+        
+        # Create comprehensive natural language text
+        text = (
+            f"Annual real estate summary for {year} - in State {state_name} ({state_code}): "
+            f"The indicator '{indicator_key}'-{indicator_name}, which stands for: {indicator_desc}. showed the following statistics "
+            f"Average value: {format_val(avg_val)}. "
+            f"Minimum value: {format_val(min_val)}. "
+            f"Maximum value: {format_val(max_val)}. "
+            f"Standard deviation: {format_val(stddev_val)}. "
+            f"This summary agregates information in a state-level context for the year {year}"
+        )
+        
+        documents.append({
+            "text": text,
+            "year_key": year,
+            "region_key": None,  # State-level, not specific region
+            "socio_indicator_key": None,
+            "realestate_indicator_key": indicator_key,
+            "asset_key": None,
+        })
+    
+    print(f"✓ Built {len(documents)} state-level aggregate documents")
+    
+    print(f"\nGenerating embeddings in batches of {BATCH_SIZE}...")
+    start_time = time.time()
+    
+    for i, doc_batch in enumerate(chunked_list(documents, BATCH_SIZE)):
+        texts = [doc['text'] for doc in doc_batch]
+        embeddings = get_embeddings_batch(texts)
+        
+        for doc, embedding in zip(doc_batch, embeddings):
+            doc['embedding'] = embedding
+        
+        batch_insert_chunks(doc_batch)
+        
+        if (i + 1) % 10 == 0:
+            elapsed = time.time() - start_time
+            rate = ((i + 1) * BATCH_SIZE) / elapsed
+            print(f"  Batch {i+1}: {rate:.1f} docs/sec")
+    
+    total_time = time.time() - start_time
+    print(f"\n✅ Loaded {len(documents)} real estate state-level yearly aggregates in {total_time:.2f}s")
+    
+    duckdb_conn.close()
+
 
 if __name__ == "__main__":
     total_inserted = 0
@@ -1002,6 +1318,8 @@ if __name__ == "__main__":
 
     init_db()
 
+    load_realestate_data_to_rag_optimized()  # Add Zillow data
+    load_realestate_yearly_aggregates()  
     load_cryptostock_data_to_rag_optimized()
     load_socioeconomic_data_to_rag_optimized()
     load_socioeconomic_multi_year_trends()

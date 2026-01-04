@@ -41,7 +41,23 @@ class EnhancedRAGRetrieval:
             'us': 'USA',
             'america': 'USA',
         }
-    
+
+        self.US_STATE_NAME_TO_CODE = {
+            "alabama": "AL", "alaska": "AK", "arizona": "AZ", "arkansas": "AR",
+            "california": "CA", "colorado": "CO", "connecticut": "CT", "delaware": "DE",
+            "florida": "FL", "georgia": "GA", "hawaii": "HI", "idaho": "ID",
+            "illinois": "IL", "indiana": "IN", "iowa": "IA", "kansas": "KS",
+            "kentucky": "KY", "louisiana": "LA", "maine": "ME", "maryland": "MD",
+            "massachusetts": "MA", "michigan": "MI", "minnesota": "MN", "mississippi": "MS",
+            "missouri": "MO", "montana": "MT", "nebraska": "NE", "nevada": "NV",
+            "new hampshire": "NH", "new jersey": "NJ", "new mexico": "NM", "new york": "NY",
+            "north carolina": "NC", "north dakota": "ND", "ohio": "OH", "oklahoma": "OK",
+            "oregon": "OR", "pennsylvania": "PA", "rhode island": "RI",
+            "south carolina": "SC", "south dakota": "SD", "tennessee": "TN", "texas": "TX",
+            "utah": "UT", "vermont": "VT", "virginia": "VA", "washington": "WA",
+            "west virginia": "WV", "wisconsin": "WI", "wyoming": "WY"
+        }
+        
     def get_available_tickers(self) -> List[str]:
         conn = self.get_connection()
         try:
@@ -106,14 +122,17 @@ class EnhancedRAGRetrieval:
         return normalized
     
     def decompose_query(self, query: str) -> Dict[str, Any]:
-        system_prompt = """You are a query analyzer for a financial data system. 
+        system_prompt = """You are a query analyzer for a financial data system.
+
         Analyze the user's question and break it into distinct sub-questions.
+
         Also identify what types of data are needed:
         - socioeconomic: World Bank indicators (GDP, inflation, unemployment, etc.)
         - cryptostock: Cryptocurrency and stock prices (BTC, ETH, AAPL, etc.)
         - realestate: Real estate indicators (home prices, rent, etc.)
-        
+
         IMPORTANT: For stocks, ALWAYS extract the TICKER SYMBOL if mentioned. So if you see a company name, convert it to its stock ticker.
+
         Examples:
         - "Johnson & Johnson" or "J&J" → extract as "JNJ"
         - "Apple" → extract as "AAPL"
@@ -124,19 +143,21 @@ class EnhancedRAGRetrieval:
         - "before pandemic" or "pre-pandemic" → 2017-2019
         - "3 years before pandemic" → 2017
         - "last 5 years" → last 5 calendar years from current year
-        
+
+        When the user mentions housing or property markets, also extract real estate-related indicators as free-text phrases,
+        for example: "home prices", "rent", "rental prices", "inventory", "days on market", "price reductions".
+
         Return a JSON with:
-        {
-            "sub_queries": ["sub-query 1", "sub-query 2", ...],
-            "data_types": ["socioeconomic", "cryptostock"],
-            "time_range": {"start": 2014, "end": 2020},
-            "entities": {
-                "crypto_assets": ["Bitcoin", "BTC"],
-                "stock_assets": ["JNJ", "Johnson & Johnson"],
-                "countries": ["USA"],
-                "indicators": ["GDP"]
-            }
-        }
+
+        "sub_queries": ["sub-query 1", "sub-query 2", ...],
+        "data_types": ["socioeconomic", "cryptostock"],
+        "time_range": {"start": 2014, "end": 2020},
+        "entities": {
+        "crypto_assets": ["Bitcoin", "BTC"],
+        "stock_assets": ["JNJ", "Johnson & Johnson"],
+        "countries": ["USA"],
+        "indicators": ["GDP"],
+        "realestate_indicators": ["home prices", "rent"]
         """
         
         response = self.client.chat.completions.create(
@@ -350,6 +371,7 @@ class EnhancedRAGRetrieval:
         query: str,
         total_k: int = 30
     ) -> Dict[str, List[Tuple]]:
+        normalized_query = self.normalize_us_state_in_query(query)
         analysis = self.decompose_query(query)
         
         print(f"\n📊 Query Analysis:")
@@ -370,7 +392,7 @@ class EnhancedRAGRetrieval:
             "analysis": analysis
         }
         
-        main_embedding = self.get_embedding(query)
+        main_embedding = self.get_embedding(normalized_query)
         sub_embeddings = [self.get_embedding(sq) for sq in analysis['sub_queries']]
         
         time_range = analysis.get('time_range', {})
@@ -526,25 +548,152 @@ class EnhancedRAGRetrieval:
         
         if "realestate" in data_types:
             print(f"\n🔍 Retrieving {docs_per_type} real estate documents...")
-            
-            if start_year and end_year:
-                results['realestate'] = self.search_with_time_filter(
-                    main_embedding,
-                    start_year,
-                    end_year,
-                    {"realestate_indicator_key IS NOT NULL": None},
-                    docs_per_type
-                )
+
+            realestate_keywords = entities.get("realestate_indicators", [])
+            realestate_codes = self.get_realestate_indicator_codes_from_keywords(realestate_keywords)
+            print(f" 🏠 Detected real estate indicator phrases: {realestate_keywords}")
+            print(f" 🔑 Mapped to real estate codes: {realestate_codes}")
+
+            all_re_results: List[Tuple] = []
+
+            # 1) Indicator-specific search (if we have codes)
+            if realestate_codes:
+                print(" 🎯 Using real estate indicator-specific search...")
+                # Split quota: half for indicator-based + half for generic/time-filtered search
+                indicator_k = max(1, docs_per_type // 2)
+                generic_k = docs_per_type - indicator_k
+
+                # Indicator-specific search with optional time range
+                if start_year and end_year:
+                    # Reuse search_with_time_filter but restrict to each indicator key
+                    indicator_results = []
+                    for code in realestate_codes:
+                        cf = {
+                            "realestate_indicator_key = '%s'" % code: None,
+                            # year_key constraint is injected by search_with_time_filter
+                        }
+                        sub_res = self.search_with_time_filter(
+                            main_embedding,
+                            start_year,
+                            end_year,
+                            cf,
+                            max(1, indicator_k // max(1, len(realestate_codes)))
+                        )
+                        indicator_results.extend(sub_res)
+                else:
+                    # Use category filter directly on indicator keys
+                    indicator_results = []
+                    for code in realestate_codes:
+                        cf = {"realestate_indicator_key = '%s'" % code: None}
+                        sub_res = self.search_by_category(
+                            main_embedding,
+                            cf,
+                            max(1, indicator_k // max(1, len(realestate_codes)))
+                        )
+                        indicator_results.extend(sub_res)
+
+                all_re_results.extend(indicator_results)
+                print(f" Found {len(indicator_results)} docs via real estate indicator search")
+
+                # 2) Generic/time-filtered real estate search on main embedding
+                if start_year and end_year:
+                    main_re_results = self.search_with_time_filter(
+                        main_embedding,
+                        start_year,
+                        end_year,
+                        {"realestate_indicator_key IS NOT NULL": None},
+                        max(1, generic_k // 2)
+                    )
+                else:
+                    main_re_results = self.search_by_category(
+                        main_embedding,
+                        {"realestate_indicator_key IS NOT NULL": None},
+                        max(1, generic_k // 2)
+                    )
+
+                all_re_results.extend(main_re_results)
+
+                # 3) Sub-query semantic searches to diversify results
+                sub_results = []
+                for sub_emb in sub_embeddings[:1]:
+                    if start_year and end_year:
+                        sub_res = self.search_with_time_filter(
+                            sub_emb,
+                            start_year,
+                            end_year,
+                            {"realestate_indicator_key IS NOT NULL": None},
+                            max(1, generic_k // 2)
+                        )
+                    else:
+                        sub_res = self.search_by_category(
+                            sub_emb,
+                            {"realestate_indicator_key IS NOT NULL": None},
+                            max(1, generic_k // 2)
+                        )
+                    sub_results.extend(sub_res)
+
+                all_re_results.extend(sub_results)
+
             else:
-                results['realestate'] = self.search_by_category(
-                    main_embedding,
-                    {"realestate_indicator_key IS NOT NULL": None},
-                    docs_per_type
-                )
-            
-            print(f"  ✓ Found {len(results['realestate'])} documents")
+                # No indicator hints → fall back to generic semantic search
+                print(" ℹ️ No specific real estate indicator keywords detected, using generic search...")
+                if start_year and end_year:
+                    main_re_results = self.search_with_time_filter(
+                        main_embedding,
+                        start_year,
+                        end_year,
+                        {"realestate_indicator_key IS NOT NULL": None},
+                        docs_per_type // 2
+                    )
+                else:
+                    main_re_results = self.search_by_category(
+                        main_embedding,
+                        {"realestate_indicator_key IS NOT NULL": None},
+                        docs_per_type // 2
+                    )
+
+                all_re_results.extend(main_re_results)
+
+                # Add diversity from sub-queries
+                for sub_emb in sub_embeddings[:1]:
+                    if start_year and end_year:
+                        sub_res = self.search_with_time_filter(
+                            sub_emb,
+                            start_year,
+                            end_year,
+                            {"realestate_indicator_key IS NOT NULL": None},
+                            docs_per_type // 2
+                        )
+                    else:
+                        sub_res = self.search_by_category(
+                            sub_emb,
+                            {"realestate_indicator_key IS NOT NULL": None},
+                            docs_per_type // 2
+                        )
+                    all_re_results.extend(sub_res)
+
+            # De-duplicate by id and trim
+            seen_ids = set()
+            unique_re_results: List[Tuple] = []
+            for r in all_re_results:
+                if r[0] not in seen_ids:
+                    seen_ids.add(r[0])
+                    unique_re_results.append(r)
+
+            results["realestate"] = unique_re_results[:docs_per_type]
+            print(f" ✓ Found {len(results['realestate'])} real estate documents total")
+
         
         return results
+    
+    def is_aggregate_realestate_doc(self, doc: Tuple) -> bool:
+        """
+        Heuristic: detect yearly aggregate docs by their text pattern.
+        doc: (id, text, year_key, region_key, socio_indicator_key, realestate_indicator_key, asset_key, similarity)
+        """
+        text = (doc[1] or "").lower()
+        return "annual real estate summary" in text or "state-level context for the year" in text
+
     
     def rerank_results(
         self,
@@ -553,21 +702,28 @@ class EnhancedRAGRetrieval:
         top_k: int = 20
     ) -> List[Tuple]:
         all_docs = []
-        
+        query_lower = query.lower()
+        wants_yearly = any(word in query_lower for word in ["average", "annual", "yearly", "per year"])
+
         for category, docs in categorized_results.items():
             if category in ['sub_queries', 'analysis']:
                 continue
             for doc in docs:
+                similarity = doc[7]
+                boost = 0.0
+                # Prefer yearly aggregate real estate docs when question is yearly-ish
+                if category == "realestate" and wants_yearly and self.is_aggregate_realestate_doc(doc):
+                    boost = 0.05  # small boost, tune as needed
+
                 all_docs.append({
                     'category': category,
                     'doc': doc,
                     'id': doc[0],
                     'text': doc[1],
-                    'similarity': doc[7]
+                    'similarity': similarity + boost
                 })
-        
+
         all_docs.sort(key=lambda x: x['similarity'], reverse=True)
-        
         return [d['doc'] for d in all_docs[:top_k]]
     
     def get_connection(self):
@@ -575,6 +731,109 @@ class EnhancedRAGRetrieval:
         register_vector(conn)
         return conn
     
+    def get_realestate_indicator_codes_from_keywords(self, keywords: List[str]) -> List[str]:
+        """Map high-level real estate keywords to Zillow realestate_indicator_key codes."""
+        # Base mapping from your Zillow indicator descriptions
+        indicator_mapping = {
+            # Price reductions / activity
+            'price reduction': ['CRAW'],
+            'price reductions': ['CRAW'],
+            'discount': ['CRAW'],
+
+            # Inventory / supply
+            'inventory': ['IRAW'],
+            'listings': ['IRAW'],
+            'homes for sale': ['IRAW'],
+            'properties listed': ['IRAW'],
+
+            # List prices
+            'list price': ['LRAW'],
+            'listing price': ['LRAW'],
+            'asking price': ['LRAW'],
+            'for sale price': ['LRAW'],
+
+            # Time on market
+            'days on market': ['NRAW'],
+            'time to sell': ['NRAW'],
+            'pending days': ['NRAW'],
+
+            # Rent / rental trends (ZORI)
+            'rent': ['RSNA', 'RSSA'],
+            'rents': ['RSNA', 'RSSA'],
+            'rental price': ['RSNA', 'RSSA'],
+            'rental prices': ['RSNA', 'RSSA'],
+            'rental index': ['RSNA', 'RSSA'],
+            'rent index': ['RSNA', 'RSSA'],
+
+            # Sale prices
+            'sale price': ['SRAW', 'SAAW'],
+            'sale prices': ['SRAW', 'SAAW'],
+            'home price': ['SRAW', 'SAAW'],
+            'home prices': ['SRAW', 'SAAW'],
+            'house price': ['SRAW', 'SAAW'],
+            'house prices': ['SRAW', 'SAAW'],
+            'home values': ['SRAW', 'SAAW'],
+            'housing prices': ['SRAW', 'SAAW'],
+            'housing price index': ['SRAW', 'SAAW'],
+
+            # Zillow Home Value Index segments
+            'home value': ['ZSFH', 'ZCON', 'ZABT', 'ZATT'],
+            'home values': ['ZSFH', 'ZCON', 'ZABT', 'ZATT'],
+            'typical home value': ['ZSFH', 'ZCON', 'ZABT', 'ZATT'],
+            'typical home values': ['ZSFH', 'ZCON', 'ZABT', 'ZATT'],
+
+            # Segment-specific
+            'single family home': ['ZSFH'],
+            'single family homes': ['ZSFH'],
+            'single family': ['ZSFH'],
+
+            'condo': ['ZCON'],
+            'condo/co-op': ['ZCON'],
+            'condos': ['ZCON'],
+            'co-op': ['ZCON'],
+
+            'bottom tier': ['ZABT'],
+            'low tier': ['ZABT'],
+            'entry level': ['ZABT'],
+
+            'top tier': ['ZATT'],
+            'high end': ['ZATT'],
+            'luxury': ['ZATT'],
+        }
+
+        codes: List[str] = []
+        for keyword in keywords:
+            if not keyword:
+                continue
+            keyword_lower = keyword.lower().strip()
+            if keyword_lower in indicator_mapping:
+                codes.extend(indicator_mapping[keyword_lower])
+
+        # Deduplicate while preserving order
+        seen = set()
+        unique_codes = []
+        for c in codes:
+            if c not in seen:
+                seen.add(c)
+                unique_codes.append(c)
+
+        return unique_codes
+
+    def normalize_us_state_in_query(self, query: str) -> str:
+        """If query contains a US state name without code, append the code form once.
+
+        Example: 'average list price in Ohio in 2019' ->
+                'average list price in Ohio (OH) in 2019'
+        """
+        q_lower = query.lower()
+        for name, code in self.US_STATE_NAME_TO_CODE.items():
+            if name in q_lower and code.lower() not in q_lower:
+                # crude but effective: just append " (XX)" after first occurrence
+                idx = q_lower.find(name)
+                end_idx = idx + len(name)
+                return query[:end_idx] + f" ({code})" + query[end_idx:]
+        return query
+
     def get_indicator_codes_from_keywords(self, keywords: List[str]) -> List[str]:
         indicator_mapping = {
             'unemployment': ['SL.UEM.TOTL.ZS'],
@@ -635,9 +894,10 @@ class EnhancedRAGRetrieval:
         total_k: int = 40,
         final_k: int = 20
     ) -> str:
-        categorized_results = self.balanced_retrieval(query, total_k)
+        normalized_query = self.normalize_us_state_in_query(query)
+        categorized_results = self.balanced_retrieval(normalized_query, total_k)
+        final_docs = self.rerank_results(normalized_query, categorized_results, final_k)
         
-        final_docs = self.rerank_results(query, categorized_results, final_k)
         
         context_parts = []
         for i, doc in enumerate(final_docs, start=1):
@@ -733,11 +993,11 @@ def main_enhanced():
     test_queries = [
         "What was USA's GDP trend from 2014-2020 and how did Bitcoin behave in the same years?",
         "Compare Apple stock performance to Ethereum in 2020",
-        "How did US unemployment rates correlate with home prices in California from 2015-2020?",
+        "What was the average list price of houses in the state of Ohio in 2019?"
     ]
     
     print("\nType your question (or 'test' to run example queries, 'quit' to exit):\n")
-    
+
     while True:
         query = input("\n📝 Question: ").strip()
         
