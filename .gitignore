@@ -3,7 +3,9 @@ datalake
 **/validation/*
 src/raw_datasets/ZILLOW*
 test.ipynb
-airflow
+**/airflow/logs/*
+**/airflow/dags/__pycache__/*
+**/airflow/plugins/*
 src/raw_datasets/cryptostocks/*
 **/__pycache__
 .venv

@@ -17,7 +17,7 @@ raw_data_path = "/opt/src/raw_datasets"  # Use Docker mounted path instead of Wi
 print("Starting Bronze Layer: Raw Data Ingestion...")
 
 # Read raw CSV files exactly as they are - USE FORWARD SLASHES
-bronze_zillow_data = spark.read.csv(f"{raw_data_path}/ZILLOW_DATA_SAMPLED_1PCT.csv", header=True, inferSchema=True) \
+bronze_zillow_data = spark.read.csv(f"{raw_data_path}/ZILLOW_DATA_962c837a6ccefddddf190101e0bafdaf.csv", header=True, inferSchema=True) \
     .withColumn("ingestion_timestamp", current_timestamp()) \
     .withColumn("source_file", lit("ZILLOW_DATA.csv"))
 
@@ -257,23 +257,23 @@ get_unit = {
 
     'CRAW': "PERCENTAGE",
     'IRAW': "UNITS",
-    'LRAW': "USD",
+    'LRAW': "USD_CURRENT",
     'NRAW': "DAYS",
-    'RSNA': "USD",
-    'RSSA': "USD",
-    'SAAW': "USD",
-    'SRAW': "USD",
-    'ZABT': "USD",
-    'ZATT': "USD",
-    'ZCON': "USD",
-    'ZSFH': "USD",
+    'RSNA': "USD_CURRENT",
+    'RSSA': "USD_CURRENT",
+    'SAAW': "USD_CURRENT",
+    'SRAW': "USD_CURRENT",
+    'ZABT': "USD_CURRENT",
+    'ZATT': "USD_CURRENT",
+    'ZCON': "USD_CURRENT",
+    'ZSFH': "USD_CURRENT",
 }
 
 # Read from Silver layer
 silver_data_df = spark.read.format("delta").load("/datalake/silver/zillow_enriched_data")
 
 from pyspark.sql import functions as F
-from pyspark.sql.types import StringType
+from pyspark.sql.types import StringType, IntegerType
 from pyspark.sql.functions import udf, year, weekofyear, month, date_format
 
 # Define UDFs for your processing functions
@@ -389,6 +389,7 @@ enriched_gold_data = silver_data_df \
     .withColumn("indicator_id", col("indicator_id")) \
     .withColumn("indicator_name", col("indicator")) \
     .withColumn("indicator_description", get_indicator_desc(col("indicator_id"))) \
+    .withColumn("date", col("date").cast("date")) \
     .withColumn("year", year(col("date"))) \
     .withColumn("day_name", date_format(col("date"), "EEEE")) \
     .withColumn("week_number", weekofyear(col("date"))) \
@@ -430,7 +431,7 @@ dim_country = (
     .distinct()
     .select("country_key", "country_name", "country_code")
 )
-dim_country.write.format("delta").mode("overwrite").save("/datalake/gold/dim_country")
+dim_country.write.format("delta").mode("overwrite").save("/datalake/gold_zillow/dim_country")
 
 # dim_state
 dim_state = (
@@ -440,7 +441,7 @@ dim_state = (
     .distinct()
     .select("state_key", "state_name", "state_code", "country_key")
 )
-dim_state.write.format("delta").mode("overwrite").save("/datalake/gold/dim_state")
+dim_state.write.format("delta").mode("overwrite").save("/datalake/gold_zillow/dim_state")
 
 # dim_metro
 dim_metro = (
@@ -449,25 +450,25 @@ dim_metro = (
     .distinct()
     .select("metro_key", "metro_name", "state_key")
 )
-dim_metro.write.format("delta").mode("overwrite").save("/datalake/gold/dim_metro")
+dim_metro.write.format("delta").mode("overwrite").save("/datalake/gold_zillow/dim_metro")
 
 # dim_county
 dim_county = (
-    enriched_gold_data.select("county_key", "state_key", "metro_key", "county_name")
+    enriched_gold_data.select("county_key", "metro_key", "county_name")
     .where(col("county_name").isNotNull())
     .distinct()
-    .select("county_key", "county_name", "metro_key", "state_key")
+    .select("county_key", "county_name", "metro_key")
 )
-dim_county.write.format("delta").mode("overwrite").save("/datalake/gold/dim_county")
+dim_county.write.format("delta").mode("overwrite").save("/datalake/gold_zillow/dim_county")
 
 # dim_city
 dim_city = (
-    enriched_gold_data.select("city_key", "city_name", "county_key", "metro_key")
+    enriched_gold_data.select("city_key", "city_name", "county_key")
     .where(col("city_name").isNotNull())
     .distinct()
-    .select("city_key", "city_name", "county_key", "metro_key")
+    .select("city_key", "city_name", "county_key")
 )
-dim_city.write.format("delta").mode("overwrite").save("/datalake/gold/dim_city")
+dim_city.write.format("delta").mode("overwrite").save("/datalake/gold_zillow/dim_city")
 
 # dim_zip
 dim_zip = (
@@ -476,7 +477,7 @@ dim_zip = (
     .distinct()
     .select(col("zip_key"), col("city_key"))
 )
-dim_zip.write.format("delta").mode("overwrite").save("/datalake/gold/dim_zip")
+dim_zip.write.format("delta").mode("overwrite").save("/datalake/gold_zillow/dim_zip")
 
 # dim_neighborhood
 dim_neighborhood = (
@@ -485,7 +486,7 @@ dim_neighborhood = (
     .distinct()
     .select("neighborhood_key", "neighborhood_name", "city_key")
 )
-dim_neighborhood.write.format("delta").mode("overwrite").save("/datalake/gold/dim_neighborhood")
+dim_neighborhood.write.format("delta").mode("overwrite").save("/datalake/gold_zillow/dim_neighborhood")
 
 dim_region = (
     enriched_gold_data
@@ -516,7 +517,7 @@ dim_region = (
         )
 )
 
-dim_region.write.format("delta").mode("overwrite").save("/datalake/gold/dim_region")
+dim_region.write.format("delta").mode("overwrite").save("/datalake/gold_zillow/dim_region")
 
 # dim_realestate_indicator
 dim_realestate_indicator = (
@@ -535,7 +536,7 @@ dim_realestate_indicator = (
         "indicator_description",
     )
 )
-dim_realestate_indicator.write.format("delta").mode("overwrite").save("/datalake/gold/dim_realestate_indicator")
+dim_realestate_indicator.write.format("delta").mode("overwrite").save("/datalake/gold_zillow/dim_realestate_indicator")
 
 # dim_time
 dim_time = (
@@ -555,7 +556,7 @@ dim_time = (
     .where(col("year").isNotNull())
     .distinct()
 )
-dim_time.write.format("delta").mode("overwrite").save("/datalake/gold/dim_time")
+dim_time.write.format("delta").mode("overwrite").save("/datalake/gold_zillow/dim_time")
 
 
 # (Optional) If you want dim_value, you can keep it, but it is expensive.
@@ -568,7 +569,7 @@ dim_value = (
     .withColumn("value_key", monotonically_increasing_id())
     .select("value_key", "value", "unit")
 )
-dim_value.write.format("delta").mode("overwrite").save("/datalake/gold/dim_value")
+dim_value.write.format("delta").mode("overwrite").save("/datalake/gold_zillow/dim_value")
 
 # ====================================================
 # GOLD – Fact
@@ -597,22 +598,22 @@ fact_value = (
     )
     .join(                       
         dim_region.alias("r"),
-        col("e.region_id") == col("r.region_key"),
-        "left",
+        col("e.region_id").cast(IntegerType()) == col("r.region_key").cast(IntegerType()),
+        "inner",
     )
     .select(
         col("v.value_key").alias("value_key"),
-        lit(None).cast("integer").alias("socioeconomical_indicator_key"),
+        lit(None).cast(StringType()).alias("socioeconomical_indicator_key"),
         col("ri.realestate_indicator_key").alias(
             "realestate_indicator_key"
         ),
-        lit(None).cast("integer").alias("cryptostock_value_key"),
+        lit(None).cast(StringType()).alias("cryptostock_value_key"),
         col("r.country_key").alias("country_key"),
         col("d.date_key").alias("date_key"),
-        lit(None).cast("integer").alias("asset_key"),
+        lit(None).cast(StringType()).alias("asset_key"),
     )
 )
-fact_value.write.format("delta").mode("overwrite").save("/datalake/gold/fact_value")
+fact_value.write.format("delta").mode("overwrite").save("/datalake/gold_zillow/fact_value")
 
 print("Gold Layer completed: Dimension and fact tables created")
 

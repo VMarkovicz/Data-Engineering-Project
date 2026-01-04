@@ -4,6 +4,7 @@ from pyspark.sql.functions import (
     col, lit, to_date, year, month, weekofyear, date_format,
     md5, concat_ws, coalesce, row_number, when
 )
+from pyspark.sql import functions as F
 from pyspark.sql.window import Window
 from pyspark.sql.types import StringType, IntegerType, DecimalType
 from pyspark.sql.functions import udf
@@ -97,7 +98,8 @@ all_countries = wb_countries.union(usa_country).distinct()
 
 window_spec = Window.orderBy("country_code")
 dim_country = all_countries \
-    .withColumn("country_key", row_number().over(window_spec)) \
+    .withColumn("country_key",
+        F.hash("country_code")) \
     .select("country_key", "country_name", "country_code")
 
 print(f"✓ dim_country: {dim_country.count()} countries")
@@ -134,12 +136,15 @@ us_code_to_states = {v: k for k, v in us_states_to_code.items()}
 # Region parsing UDFs
 @udf(returnType=StringType())
 def extract_state_code(region, region_type):
+    """Extract state code from region based on region_type"""
     if region_type == 'state':
         return us_states_to_code.get(region)
     elif region_type == 'metro':
         if ',' in region:
             return region.rsplit(',', 1)[1].strip()
-        return None
+        else:
+            parts = region.split(';')
+            return parts[1] if len(parts) > 1 else None
     elif region_type in ['county', 'city', 'zip', 'neigh']:
         parts = region.split(';')
         return parts[1] if len(parts) > 1 else None
@@ -147,18 +152,21 @@ def extract_state_code(region, region_type):
 
 @udf(returnType=StringType())
 def extract_state_name(state_code):
-    return us_code_to_states.get(state_code)
+    """Convert state code to state name"""
+    return us_code_to_states.get(state_code.strip()) if state_code else None
 
 @udf(returnType=StringType())
 def extract_metro_name(region, region_type):
+    """Extract metro name from region"""
     if region_type == 'metro':
         if ',' in region:
             return region.rsplit(',', 1)[0].strip()
         return region
     elif region_type in ['county', 'city', 'zip']:
         parts = region.split(';')
-        if len(parts) > 2:
-            metro = parts[2]
+        metro_idx = 2
+        if len(parts) > metro_idx:
+            metro = parts[metro_idx]
             if ',' in metro:
                 metro = metro.rsplit(',', 1)[0]
             return metro if metro != 'nan' else None
@@ -173,6 +181,7 @@ def extract_metro_name(region, region_type):
 
 @udf(returnType=StringType())
 def extract_county_name(region, region_type):
+    """Extract county name from region"""
     if region_type == 'county':
         return region.split(';')[0]
     elif region_type in ['city', 'zip']:
@@ -185,6 +194,7 @@ def extract_county_name(region, region_type):
 
 @udf(returnType=StringType())
 def extract_city_name(region, region_type):
+    """Extract city name from region"""
     if region_type == 'city':
         return region.split(';')[0]
     elif region_type == 'zip':
@@ -196,17 +206,40 @@ def extract_city_name(region, region_type):
     return None
 
 @udf(returnType=StringType())
-def extract_zip_code(region, region_type):
+def extract_zip_key(region, region_type):
+    """Extract ZIP code from region"""
     if region_type == 'zip':
-        zip_code = region.split(';')[0]
-        return zip_code if zip_code != 'nan' else '00000'
+        zip_key = region.split(';')[0]
+        return zip_key if zip_key != 'nan' else '00000'
     return None
 
 @udf(returnType=StringType())
 def extract_neighborhood_name(region, region_type):
+    """Extract neighborhood name from region"""
     if region_type == 'neigh':
         return region.split(';')[0]
     return None
+
+# Zillow values
+zillow_indicator_units = {
+    'CRAW': "PERCENTAGE",
+    'IRAW': "UNITS",
+    'LRAW': "USD_CURRENT",
+    'NRAW': "DAYS",
+    'RSNA': "USD_CURRENT",
+    'RSSA': "USD_CURRENT",
+    'SAAW': "USD_CURRENT",
+    'SRAW': "USD_CURRENT",
+    'ZABT': "USD_CURRENT",
+    'ZATT': "USD_CURRENT",
+    'ZCON': "USD_CURRENT",
+    'ZSFH': "USD_CURRENT",
+}
+
+@udf(returnType=StringType())
+def get_zillow_unit(indicator_id):
+    return zillow_indicator_units.get(indicator_id, "USD_CURRENT")
+
 
 # Apply transformations
 enriched_zillow = zillow_silver \
@@ -216,112 +249,128 @@ enriched_zillow = zillow_silver \
     .withColumn("metro_name", extract_metro_name(col("region"), col("region_type"))) \
     .withColumn("county_name", extract_county_name(col("region"), col("region_type"))) \
     .withColumn("city_name", extract_city_name(col("region"), col("region_type"))) \
-    .withColumn("zip_code", extract_zip_code(col("region"), col("region_type"))) \
-    .withColumn("neighborhood_name", extract_neighborhood_name(col("region"), col("region_type")))
+    .withColumn("zip_key", extract_zip_key(col("region"), col("region_type"))) \
+    .withColumn("neighborhood_name", extract_neighborhood_name(col("region"), col("region_type"))) \
+    .withColumn("region_type", col("region_type")) \
+    .withColumn("region_id", col("region_id")) \
+    .withColumn("value", col("value")) \
+    .withColumn("unit", get_zillow_unit(col("indicator_id"))) \
+    .withColumn("indicator_id", col("indicator_id")) \
+    .withColumn("date", col("date").cast("date")) \
+    .withColumn(
+        "country_key",
+        F.hash("country_code") \
+    ).withColumn(
+        "state_key",
+        F.hash("state_code") \
+    ).withColumn(
+        "metro_key",
+        F.hash("metro_name") \
+    ).withColumn(
+        "county_key",
+        F.hash("county_name") \
+    ).withColumn(
+        "city_key",
+        F.hash("city_name") \
+    ).withColumn(
+        "neighborhood_key",
+        F.hash("neighborhood_name") \
+    )
 
 # dim_state
-dim_state = enriched_zillow.select("state_code", "state_name", "country_code") \
-    .filter(col("state_code").isNotNull()) \
-    .filter(col("state_name").isNotNull()) \
-    .distinct() \
-    .join(dim_country.select("country_code", "country_key"), "country_code", "inner") \
-    .withColumn("state_key", row_number().over(Window.orderBy("state_code"))) \
+dim_state = (
+    enriched_zillow.select("state_key", "country_key", "state_code", "state_name")
+    .where(col("state_code").isNotNull())
+    .where(col("state_name").isNotNull())
+    .distinct()
     .select("state_key", "state_name", "state_code", "country_key")
+)
 
 print(f"✓ dim_state: {dim_state.count()} states")
 dim_state.write.format("delta").mode("overwrite").save("/datalake/gold/dim_state")
 
 # dim_metro
-dim_metro = enriched_zillow.select("metro_name", "state_code") \
-    .filter(col("metro_name").isNotNull()) \
-    .distinct() \
-    .join(dim_state.select("state_code", "state_key"), "state_code", "inner") \
-    .withColumn("metro_key", row_number().over(Window.orderBy("metro_name", "state_key"))) \
+dim_metro = (
+    enriched_zillow.select("metro_key", "state_key", "metro_name")
+    .where(col("metro_name").isNotNull())
+    .distinct()
     .select("metro_key", "metro_name", "state_key")
+)
 
 print(f"✓ dim_metro: {dim_metro.count()} metros")
 dim_metro.write.format("delta").mode("overwrite").save("/datalake/gold/dim_metro")
 
 # dim_county
-dim_county = enriched_zillow.select("county_name", "metro_name", "state_code") \
-    .filter(col("county_name").isNotNull()) \
-    .distinct() \
-    .join(dim_state.select("state_code", "state_key"), "state_code", "inner") \
-    .join(dim_metro.select("metro_name", "metro_key", "state_key"), ["metro_name", "state_key"], "left") \
-    .withColumn("county_key", row_number().over(Window.orderBy("county_name", "state_key"))) \
-    .select("county_key", "county_name", "metro_key", "state_key")
+dim_county = (
+    enriched_zillow.select("county_key", "metro_key", "county_name")
+    .where(col("county_name").isNotNull())
+    .distinct()
+    .select("county_key", "county_name", "metro_key")
+)
 
 print(f"✓ dim_county: {dim_county.count()} counties")
 dim_county.write.format("delta").mode("overwrite").save("/datalake/gold/dim_county")
 
 # dim_city
-dim_city = enriched_zillow.select("city_name", "county_name", "metro_name") \
-    .filter(col("city_name").isNotNull()) \
-    .distinct() \
-    .join(dim_county.select("county_name", "county_key", "state_key"), "county_name", "left") \
-    .join(dim_metro.select("metro_name", "metro_key"), "metro_name", "left") \
-    .withColumn("city_key", row_number().over(Window.orderBy("city_name", "county_key"))) \
-    .select("city_key", "city_name", "county_key", "metro_key")
-
+dim_city = (
+    enriched_zillow.select("city_key", "city_name", "county_key")
+    .where(col("city_name").isNotNull())
+    .distinct()
+    .select("city_key", "city_name", "county_key")
+)
 print(f"✓ dim_city: {dim_city.count()} cities")
 dim_city.write.format("delta").mode("overwrite").save("/datalake/gold/dim_city")
 
 # dim_zip - FIXED: consistent naming
-dim_zip = enriched_zillow.select("zip_code", "city_name") \
-    .filter(col("zip_code").isNotNull()) \
-    .distinct() \
-    .join(dim_city.select("city_name", "city_key"), "city_name", "left") \
-    .select(
-        col("zip_code").cast(IntegerType()).alias("zip_key"),
-        "city_key"
-    )
-
+dim_zip = (
+    enriched_zillow.select("zip_key", "city_key")
+    .where(col("zip_key").isNotNull())
+    .distinct()
+    .select(col("zip_key"), col("city_key"))
+)
 print(f"✓ dim_zip: {dim_zip.count()} zip codes")
 dim_zip.write.format("delta").mode("overwrite").save("/datalake/gold/dim_zip")
 
 # dim_neighborhood
-dim_neighborhood = enriched_zillow.select("neighborhood_name", "city_name") \
-    .filter(col("neighborhood_name").isNotNull()) \
-    .distinct() \
-    .join(dim_city.select("city_name", "city_key"), "city_name", "left") \
-    .withColumn("neighborhood_key", row_number().over(Window.orderBy("neighborhood_name", "city_key"))) \
+dim_neighborhood = (
+    enriched_zillow.select("neighborhood_key", "neighborhood_name", "city_key")
+    .where(col("neighborhood_name").isNotNull())
+    .distinct()
     .select("neighborhood_key", "neighborhood_name", "city_key")
+)
 
 print(f"✓ dim_neighborhood: {dim_neighborhood.count()} neighborhoods")
 dim_neighborhood.write.format("delta").mode("overwrite").save("/datalake/gold/dim_neighborhood")
 
-# dim_region - FIXED: use zip_code consistently
-base_region = enriched_zillow.select(
-    col("region_id"),
-    col("region_type"),
-    col("country_code"),
-    col("state_code"),
-    col("metro_name"),
-    col("county_name"),
-    col("city_name"),
-    col("zip_code"),
-    col("neighborhood_name")
-).filter(col("region_id").isNotNull()).distinct()
-
-dim_region = base_region \
-    .join(dim_country.select("country_code", "country_key"), "country_code", "left") \
-    .join(dim_state.select("state_code", "state_key"), "state_code", "left") \
-    .join(dim_metro.select("metro_name", "metro_key"), "metro_name", "left") \
-    .join(dim_county.select("county_name", "county_key"), "county_name", "left") \
-    .join(dim_city.select("city_name", "city_key"), "city_name", "left") \
-    .join(dim_zip.select("zip_key"), col("zip_code").cast(IntegerType()) == col("zip_key"), "left") \
-    .join(dim_neighborhood.select("neighborhood_name", "neighborhood_key"), "neighborhood_name", "left") \
-    .select(
-        col("region_id").cast(IntegerType()).alias("region_key"),
-        "region_type",
-        "zip_key",
-        "neighborhood_key",
-        "city_key",
-        "county_key",
-        "metro_key",
-        "state_key",
-        "country_key"
-    )
+# dim_region - FIXED: use zip_key consistently
+dim_region = (
+    enriched_zillow
+        .select(
+            "region_id",
+            "region_type",
+            "country_key",
+            "state_key",
+            "metro_key",
+            "county_key",
+            "city_key",
+            "zip_key",
+            "neighborhood_key",
+        )
+        .where(F.col("region_id").isNotNull())
+        .where(F.col("region_type").isNotNull())
+        .dropDuplicates(["region_id"])
+        .select(
+            F.col("region_id").alias("region_key"),
+            "region_type",
+            "country_key",
+            "state_key",
+            "metro_key",
+            "county_key",
+            "city_key",
+            "zip_key",
+            "neighborhood_key",
+        )
+)
 
 print(f"✓ dim_region: {dim_region.count()} regions")
 dim_region.write.format("delta").mode("overwrite").save("/datalake/gold/dim_region")
@@ -402,16 +451,7 @@ wb_values = wb_silver.select(col("value"), col("series_id")) \
     .select("value", coalesce(col("unit"), lit("UNKNOWN")).alias("unit")) \
     .distinct()
 
-# Zillow values
-zillow_indicator_units = {
-    'CRAW': 'PERCENTAGE', 'IRAW': 'UNITS', 'LRAW': 'USD', 'NRAW': 'DAYS',
-    'RSNA': 'USD', 'RSSA': 'USD', 'SAAW': 'USD', 'SRAW': 'USD',
-    'ZABT': 'USD', 'ZATT': 'USD', 'ZCON': 'USD', 'ZSFH': 'USD'
-}
 
-@udf(returnType=StringType())
-def get_zillow_unit(indicator_id):
-    return zillow_indicator_units.get(indicator_id, "USD")
 
 zillow_values = zillow_silver.select(col("value"), col("indicator_id")) \
     .withColumn("unit", get_zillow_unit(col("indicator_id"))) \
@@ -450,7 +490,7 @@ print(f"✓ dim_socioeconomical_indicator: {dim_socio_indicator.count()}")
 dim_socio_indicator.write.format("delta").mode("overwrite") \
     .save("/datalake/gold/dim_socioeconomical_indicator")
 
-# dim_realstate_indicator
+# dim_realestate_indicator
 zillow_indicator_descriptions = {
     'CRAW': 'Percentage of listings with a price reduction (RAW, ALL HOMES, WEEKLY)',
     'IRAW': 'Number of properties listed for sale (RAW, ALL HOMES, WEEKLY)',
@@ -470,17 +510,17 @@ zillow_indicator_descriptions = {
 def get_zillow_description(indicator_id):
     return zillow_indicator_descriptions.get(indicator_id, "")
 
-dim_realstate_indicator = enriched_zillow.select(
-    col("indicator_id").alias("realstate_indicator_key"),
+dim_realestate_indicator = enriched_zillow.select(
+    col("indicator_id").alias("realestate_indicator_key"),
     col("region_id").cast(IntegerType()).alias("region_key"),
     col("indicator").alias("indicator_name")
 ).distinct() \
-    .withColumn("indicator_description", get_zillow_description(col("realstate_indicator_key"))) \
-    .select("realstate_indicator_key", "region_key", "indicator_name", "indicator_description")
+    .withColumn("indicator_description", get_zillow_description(col("realestate_indicator_key"))) \
+    .select("realestate_indicator_key", "region_key", "indicator_name", "indicator_description")
 
-print(f"✓ dim_realstate_indicator: {dim_realstate_indicator.count()}")
-dim_realstate_indicator.write.format("delta").mode("overwrite") \
-    .save("/datalake/gold/dim_realstate_indicator")
+print(f"✓ dim_realestate_indicator: {dim_realestate_indicator.count()}")
+dim_realestate_indicator.write.format("delta").mode("overwrite") \
+    .save("/datalake/gold/dim_realestate_indicator")
 
 # dim_asset
 dim_asset = cryptostock_silver.select("symbol", "type").distinct() \
@@ -534,7 +574,7 @@ wb_facts = wb_with_unit.alias("wb") \
     .select(
         col("v.value_key").cast(IntegerType()),
         col("wb.series_id").alias("socioeconomical_indicator_key"),
-        lit(None).cast(StringType()).alias("realstate_indicator_key"),
+        lit(None).cast(StringType()).alias("realestate_indicator_key"),
         lit(None).cast(StringType()).alias("cryptostock_value_key"),
         col("c.country_key"),
         col("t.date_key"),
@@ -553,29 +593,66 @@ zillow_with_unit = enriched_zillow.alias("z") \
         get_zillow_unit(col("z.indicator_id")).alias("zillow_unit")
     )
 
-zillow_facts = zillow_with_unit.alias("z") \
-    .join(dim_value.alias("v"), 
-        (col("z.value") == col("v.value")) & (col("z.zillow_unit") == col("v.unit")),
-        "inner") \
-    .join(dim_region.alias("r"), 
-        col("z.region_id").cast(IntegerType()) == col("r.region_key"), 
-        "inner") \
-    .join(dim_time.alias("t"), 
-        to_date(col("z.date")) == col("t.date_key"), 
-        "inner") \
-    .join(dim_realstate_indicator.alias("ri"),
-        (col("z.indicator_id") == col("ri.realstate_indicator_key")) &
-        (col("z.region_id").cast(IntegerType()) == col("ri.region_key")),
-        "inner") \
+zillow_facts = (
+    enriched_zillow.alias("e")
+    # Join com dim_value para obter value_key
+    .join(
+        dim_value.alias("v"),
+        (col("e.value") == col("v.value"))
+        & (col("e.unit") == col("v.unit")),
+        "inner",
+    )
+    .join(
+        dim_realestate_indicator.alias("ri"),
+        (col("e.indicator_id") == col("ri.realestate_indicator_key"))
+        & (col("e.region_id") == col("ri.region_key")),
+        "inner",
+    )
+    .join(
+        dim_time.alias("d"),
+        col("e.date") == col("d.date_key"),
+        "inner",
+    )
+    .join(                       
+        dim_region.alias("r"),
+        col("e.region_id").cast(IntegerType()) == col("r.region_key").cast(IntegerType()),
+        "inner",
+    )
     .select(
-        col("v.value_key").cast(IntegerType()),
+        col("v.value_key").alias("value_key"),
         lit(None).cast(StringType()).alias("socioeconomical_indicator_key"),
-        col("ri.realstate_indicator_key"),
+        col("ri.realestate_indicator_key").alias(
+            "realestate_indicator_key"
+        ),
         lit(None).cast(StringType()).alias("cryptostock_value_key"),
-        col("r.country_key"),
-        col("t.date_key"),
-        lit(None).cast(StringType()).alias("asset_key")
-    ).distinct()
+        col("r.country_key").alias("country_key"),
+        col("d.date_key").alias("date_key"),
+        lit(None).cast(StringType()).alias("asset_key"),
+    )
+).distinct()
+# zillow_with_unit.alias("z") \
+#     .join(dim_value.alias("v"), 
+#         (col("z.value") == col("v.value")) & (col("z.zillow_unit") == col("v.unit")),
+#         "inner") \
+#     .join(dim_region.alias("r"), 
+#         col("z.region_id").cast(IntegerType()) == col("r.region_key"), 
+#         "inner") \
+#     .join(dim_time.alias("t"), 
+#         to_date(col("z.date")) == col("t.date_key"), 
+#         "inner") \
+#     .join(dim_realstate_indicator.alias("ri"),
+#         (col("z.indicator_id") == col("ri.realestate_indicator_key")) &
+#         (col("z.region_id").cast(IntegerType()) == col("ri.region_key")),
+#         "inner") \
+#     .select(
+#         col("v.value_key").cast(IntegerType()),
+#         lit(None).cast(StringType()).alias("socioeconomical_indicator_key"),
+#         col("ri.realestate_indicator_key"),
+#         lit(None).cast(StringType()).alias("cryptostock_value_key"),
+#         col("r.country_key"),
+#         col("t.date_key"),
+#         lit(None).cast(StringType()).alias("asset_key")
+#     ).distinct()
 
 print(f"✓ Zillow facts: {zillow_facts.count()}")
 
@@ -594,7 +671,7 @@ crypto_facts = cryptostock_silver.alias("cs") \
     .select(
         lit(None).cast(IntegerType()).alias("value_key"),
         lit(None).cast(StringType()).alias("socioeconomical_indicator_key"),
-        lit(None).cast(StringType()).alias("realstate_indicator_key"),
+        lit(None).cast(StringType()).alias("realestate_indicator_key"),
         col("cv.cryptostock_value_key").cast(StringType()),
         lit(None).cast(IntegerType()).alias("country_key"),
         col("t.date_key"),
