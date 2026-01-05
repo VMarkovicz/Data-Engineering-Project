@@ -57,7 +57,7 @@ fetch_data = DockerOperator(
     mount_tmp_dir=False,
     command='python /opt/src/api_ingestion/fetch_crypto_stock_data.py',
     docker_url=DOCKER_URL,
-    network_mode='data-engineering-project_default',
+    network_mode='data-engineering-project_app-network',
     mounts=COMMON_MOUNTS,
     environment={
         'ALPACA_API_KEY': Variable.get("ALPACA_API_KEY"),
@@ -74,7 +74,7 @@ process_spark_crypto = DockerOperator(
     mount_tmp_dir=False,
     command=SPARK_COMMAND('/opt/src/ingestion/crypto_qdl_ingestion.py'),
     docker_url=DOCKER_URL,
-    network_mode='data-engineering-project_default',
+    network_mode='data-engineering-project_app-network',
     mounts=COMMON_MOUNTS,
     environment={
         'SPARK_MASTER_URL': SPARK_MASTER_URL
@@ -90,7 +90,7 @@ process_spark_stocks = DockerOperator(
     mount_tmp_dir=False,
     command=SPARK_COMMAND('/opt/src/ingestion/stocks_spark_ingestion.py'),
     docker_url=DOCKER_URL,
-    network_mode='data-engineering-project_default',
+    network_mode='data-engineering-project_app-network',
     mounts=COMMON_MOUNTS,
     environment={
         'SPARK_MASTER_URL': SPARK_MASTER_URL
@@ -106,7 +106,7 @@ process_spark_wb = DockerOperator(
     mount_tmp_dir=False,
     command=SPARK_COMMAND('/opt/src/ingestion/wb_spark_ingestion.py'),
     docker_url=DOCKER_URL,
-    network_mode='data-engineering-project_default',
+    network_mode='data-engineering-project_app-network',
     mounts=COMMON_MOUNTS,
     environment={
         'SPARK_MASTER_URL': SPARK_MASTER_URL
@@ -122,7 +122,7 @@ process_spark_zillow = DockerOperator(
     mount_tmp_dir=False,
     command=SPARK_COMMAND('/opt/src/ingestion/zillow_spark_ingestion.py'),
     docker_url=DOCKER_URL,
-    network_mode='data-engineering-project_default',
+    network_mode='data-engineering-project_app-network',
     mounts=COMMON_MOUNTS,
     environment={
         'SPARK_MASTER_URL': SPARK_MASTER_URL
@@ -138,7 +138,7 @@ create_gold_layer = DockerOperator(
     mount_tmp_dir=False,
     command=SPARK_COMMAND('/opt/src/ingestion/unified_gold_layer.py'),
     docker_url=DOCKER_URL,
-    network_mode='data-engineering-project_default',
+    network_mode='data-engineering-project_app-network',
     mounts=COMMON_MOUNTS,
     environment={
         'SPARK_MASTER_URL': SPARK_MASTER_URL
@@ -154,7 +154,7 @@ validate_data = DockerOperator(
     mount_tmp_dir=False,
     command='python /opt/src/validation/validate_gold_layer.py',
     docker_url='unix://var/run/docker.sock',
-    network_mode='data-engineering-project_default',
+    network_mode='data-engineering-project_app-network',
     mounts=COMMON_MOUNTS,
     dag=dag,
 )
@@ -167,7 +167,7 @@ cleanup = DockerOperator(
     mount_tmp_dir=False,
     command='python /opt/src/api_ingestion/clean_cryptostocks_folder.py',
     docker_url='unix://var/run/docker.sock',
-    network_mode='data-engineering-project_default',
+    network_mode='data-engineering-project_app-network',
     mounts=COMMON_MOUNTS,
     dag=dag,
 )
@@ -180,8 +180,11 @@ generate_rag_documents = DockerOperator(
     mount_tmp_dir=False,
     command='python /opt/src/rag/postgres_vector.py',
     docker_url='unix://var/run/docker.sock',
-    network_mode='data-engineering-project_default',
+    network_mode='data-engineering-project_app-network',
     mounts=COMMON_MOUNTS,
+    environment={
+        'OPEN_AI_KEY': Variable.get("OPEN_AI_KEY"),
+    },
     dag=dag,
 )
 

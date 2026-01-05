@@ -121,6 +121,10 @@ List of the required tools to run the project.
   - Requires to specify DuckDB file path
     - /datalake/analytics/warehouse_star.duckdb
   - Set DuckDB connection as read-only.
+    - If metabase loads backup data correctly during setup, you don't need to follow the previous steps
+    - Just access the login page and set these credentials
+      - email: jonathan224santos@gmail.com
+      - password: 111722js
 
 ## RAG Service
   - The RAG service is available at: src\rag\rag_execution.py

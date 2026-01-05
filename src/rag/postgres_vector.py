@@ -9,7 +9,7 @@ from threading import Lock
 import time
 
 EMBEDDING_MODEL = "text-embedding-3-small"
-BATCH_SIZE = 512
+BATCH_SIZE = 200
 MAX_WORKERS = 5
 DB_BATCH_SIZE = 50
 
@@ -17,7 +17,7 @@ DB_SETTINGS = {
     "dbname": "rag_db",
     "user": "rag_user",
     "password": "rag_password",
-    "host": "localhost",
+    "host": "rag-postgres",
     "port": 5432,
 }
 

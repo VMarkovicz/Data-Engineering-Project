@@ -28,6 +28,8 @@ services:
     ports:
       - "7077:7077"
       - "8080:8080"
+    networks:
+    - app-network
     volumes:
       - ./src:/opt/src
       - ./datalake:/datalake
@@ -47,6 +49,8 @@ services:
       - ./datalake:/datalake
     deploy:
       replicas: 2
+    networks:
+      - app-network
 
   spark-run:
     build:
@@ -63,6 +67,8 @@ services:
     ports:
       - "4040:4040"
     entrypoint: ["/bin/bash", "-c", "tail -f /dev/null"]
+    networks:
+      - app-network
 
   airflow-postgres:
     image: postgres:13
@@ -78,6 +84,8 @@ services:
       interval: 5s
       retries: 5
     restart: unless-stopped
+    networks:
+      - app-network
 
   airflow-init:
     image: apache/airflow:2.8.1-python3.11
@@ -88,7 +96,7 @@ services:
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres/airflow
-      AIRFLOW__CORE__FERNET_KEY: 'UKMzEm3yIuFYEq1y3-2FxJf8qGGOv3wGf_PZtQ='
+      AIRFLOW__CORE__FERNET_KEY: 'IgDM_MQClyosOZDOJrtXOOnoi1QhXGUsRQ88H6zKewM='
       AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
       AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
       _AIRFLOW_DB_MIGRATE: 'true'
@@ -100,6 +108,8 @@ services:
       - ./src/airflow/logs:/opt/airflow/logs
       - ./src/airflow/plugins:/opt/airflow/plugins
     entrypoint: /bin/bash
+    networks:
+      - app-network
     command:
       - -c
       - |
@@ -115,6 +125,12 @@ services:
           --role Admin \
           --email admin@example.com \
           --password admin || true
+        echo "Setting Airflow variables..."
+        airflow variables set OPEN_AI_KEY "${OPEN_AI_KEY}"
+        airflow variables set ALPACA_API_KEY "${ALPACA_API_KEY}"
+        airflow variables set ALPACA_SECRET_KEY "${ALPACA_SECRET_KEY}"
+        airflow variables set PROJECT_ROOT "${PROJECT_ROOT}"
+        echo "Airflow initialization complete!"
         echo "Airflow initialization complete!"
 
   airflow-webserver:
@@ -131,7 +147,7 @@ services:
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres/airflow
-      AIRFLOW__CORE__FERNET_KEY: 'UKMzEm3yIuFYEq1y3-2FxJf8qGGOv3wGf_PZtQ='
+      AIRFLOW__CORE__FERNET_KEY: 'IgDM_MQClyosOZDOJrtXOOnoi1QhXGUsRQ88H6zKewM='
       AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
       AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
       AIRFLOW__WEBSERVER__SECRET_KEY: 'secret'
@@ -158,6 +174,8 @@ services:
       timeout: 10s
       retries: 5
     restart: unless-stopped
+    networks:
+      - app-network
 
   airflow-scheduler:
     image: apache/airflow:2.8.1-python3.11
@@ -173,7 +191,7 @@ services:
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres/airflow
-      AIRFLOW__CORE__FERNET_KEY: 'UKMzEm3yIuFYEq1y3-2FxJf8qGGOv3wGf_PZtQ='
+      AIRFLOW__CORE__FERNET_KEY: 'IgDM_MQClyosOZDOJrtXOOnoi1QhXGUsRQ88H6zKewM='
       AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
       AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
       SPARK_MASTER_URL: 'spark://spark-master:7077'
@@ -193,7 +211,8 @@ services:
         chown -R airflow:root /opt/airflow/logs
         exec gosu airflow airflow scheduler
     restart: unless-stopped
-
+    networks:
+      - app-network
   api-service:
     build:
       context: .
@@ -245,7 +264,7 @@ services:
       - "3000:3000"
     volumes:
       - ./datalake:/datalake:ro
-      - metabase-data:/metabase-data
+      - ./backups/metabase-data:/metabase-data
     networks:
       - app-network
     restart: unless-stopped
@@ -275,4 +294,3 @@ networks:
 volumes:
   pgdata:
   airflow-postgres-data:
-  metabase-data:

@@ -55,7 +55,7 @@ fetch_data = DockerOperator(
     mount_tmp_dir=False,
     command='python /opt/src/api_ingestion/fetch_last_day_data.py',
     docker_url=DOCKER_URL,
-    network_mode='data-engineering-project_default',
+    network_mode='data-engineering-project_app-network',
     mounts=COMMON_MOUNTS,
     environment={
         'ALPACA_API_KEY': Variable.get("ALPACA_API_KEY"),
@@ -81,7 +81,7 @@ process_spark = DockerOperator(
         '/opt/src/ingestion/stocks_spark_ingestion.py'
     ],
     docker_url=DOCKER_URL,
-    network_mode='data-engineering-project_default',
+    network_mode='data-engineering-project_app-network',
     mounts=COMMON_MOUNTS,
     environment={
         'SPARK_MASTER_URL': 'spark://spark-master:7077'
@@ -97,7 +97,7 @@ create_gold_layer = DockerOperator(
     mount_tmp_dir=False,
     command=SPARK_COMMAND('/opt/src/ingestion/unified_gold_layer.py'),
     docker_url=DOCKER_URL,
-    network_mode='data-engineering-project_default',
+    network_mode='data-engineering-project_app-network',
     mounts=COMMON_MOUNTS,
     environment={
         'SPARK_MASTER_URL': SPARK_MASTER_URL
@@ -113,7 +113,7 @@ validate_data = DockerOperator(
     mount_tmp_dir=False,
     command='python /opt/src/validation/validate_gold_layer.py',
     docker_url=DOCKER_URL,
-    network_mode='data-engineering-project_default',
+    network_mode='data-engineering-project_app-network',
     mounts=COMMON_MOUNTS,
     dag=dag,
 )
@@ -126,7 +126,7 @@ cleanup = DockerOperator(
     mount_tmp_dir=False,
     command='python /opt/src/api_ingestion/clean_cryptostocks_folder.py',
     docker_url=DOCKER_URL,
-    network_mode='data-engineering-project_default',
+    network_mode='data-engineering-project_app-network',
     mounts=COMMON_MOUNTS,
     dag=dag,
 )

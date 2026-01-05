@@ -1,4 +1,4 @@
-FROM apache/spark:3.5.0
+FROM apache/spark:3.5.3-scala2.12-java17-python3-ubuntu
 
 USER root
 
@@ -13,13 +13,11 @@ ENV SETUPTOOLS_USE_DISTUTILS=stdlib
 # Install Python packages
 RUN pip install --no-cache-dir -r /opt/spark/work-dir/requirements-spark.txt
 
-RUN pip install --no-cache-dir duckdb
-
-# Download Delta Lake JARs
-RUN curl -L -o /opt/spark/jars/delta-spark_2.12-3.2.0.jar \
-    https://repo1.maven.org/maven2/io/delta/delta-spark_2.12/3.2.0/delta-spark_2.12-3.2.0.jar && \
-    curl -L -o /opt/spark/jars/delta-storage-3.2.0.jar \
-    https://repo1.maven.org/maven2/io/delta/delta-storage/3.2.0/delta-storage-3.2.0.jar
+# Download Delta Lake JARs for Scala 2.12 (compatible with Spark 3.5)
+RUN curl -L -o /opt/spark/jars/delta-spark_2.12-3.2.1.jar \
+    https://repo1.maven.org/maven2/io/delta/delta-spark_2.12/3.2.1/delta-spark_2.12-3.2.1.jar && \
+    curl -L -o /opt/spark/jars/delta-storage-3.2.1.jar \
+    https://repo1.maven.org/maven2/io/delta/delta-storage/3.2.1/delta-storage-3.2.1.jar
 
 # Create symlink for python (optional, for convenience)
 RUN ln -s /usr/bin/python3 /usr/bin/python

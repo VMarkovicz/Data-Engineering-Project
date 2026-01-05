@@ -12,7 +12,7 @@ def fetch_cryptostocks_data(symbol, asset_type):
     base_url_crypto = "https://data.alpaca.markets/v1beta3/crypto/us/bars"
 
     yesterday = date.today() - timedelta(days=1)
-    day_before_yesterday = yesterday - timedelta(days=1)
+    day_before_yesterday = yesterday - timedelta(days=2)
     yesterday_str = yesterday.strftime("%Y-%m-%d")
     day_before_yesterday_str = day_before_yesterday.strftime("%Y-%m-%d")
     params = {
@@ -222,7 +222,7 @@ def main():
             time.sleep(12)
                 
         except Exception as e:
-            print(f"❌ Error fetching {symbol}: {str(e)}, Stacktrace: ", exc_info=True)
+            print(f"❌ Error fetching {symbol}: {type(e).__name__}: {e}")
             results.append({"symbol": symbol, "status": "error", "error": str(e)})
     
     print("\n" + "="*60)
